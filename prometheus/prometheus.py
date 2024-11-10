@@ -25,14 +25,9 @@ class LLMTool:
     asyncFunction: bool = False
 
 @dataclasses.dataclass
-class promptMessage:
-    role: Literal["system", "user"]
-    content: str
-
-@dataclasses.dataclass
 class instruction:
     """ An intruction given from one part of the system to another."""
-    task: str
+    action: str
     reason: str
 
 class Prometheus:
@@ -45,6 +40,7 @@ class Prometheus:
                  tools: Dict[str, LLMTool],
                  tools_path: str = "./tools", # Path to the tools directory
                  create_tool_prompt: Callable = None,
+                 make_plan_prompt: Callable = None,
                  logger: Logger = None
                  ) -> None:
         self.tools = tools
@@ -61,10 +57,23 @@ class Prometheus:
         self.tools_path = tools_path
         self._import_tools()
 
+        # set the constructor for the prompt for creating python tools
         if create_tool_prompt:
             self.create_tool_prompt = create_tool_prompt
         else:
             self.create_tool_prompt = self._deault_create_tool_prompt
+
+        # set the constructor for the prompt for evaluating the plan
+        if make_plan_prompt:
+            self.make_plan_prompt = make_plan_prompt
+        else:
+            self.make_plan_prompt = self._makePlanDefault
+
+        self.planQueue:List[instruction] = []
+        """ The queue of instructions to be executed by the system."""
+
+        self.goal = ""
+        """ The goal given to the system by the user (the main task)."""
 
     def log(self, message: str, level: int = INFO):
         """ Logs a message to the logger."""
@@ -84,7 +93,7 @@ class Prometheus:
         """ Default prompt to create a tool."""
         return [
             {"role": "system", "content": f"You are an experienced python AI programmer who has been tasked with creating a python script called {tool_name} with the description: {tool_description}, for part of a larger system."},
-            {"role": "system", "content": f"You have been given the following Instruction: \n {instruction.task} \n Reason: {instruction.reason}"},
+            {"role": "system", "content": f"You have been given the following Instruction: \n {instruction.action} \n Reason: {instruction.reason}"},
             {"role": "system", "content": f"The following are required parameters: {', '.join(tool_required_parameters)}. The rest are optional."},
             {"role": "system", "content": f"Create a single python script. "},
             {"role": "system", "content": f"The script must have a global function called 'Run' so it can be called by the system. "},
@@ -200,11 +209,11 @@ class Prometheus:
             tool_choice = self._formatToolChoice(forced_tool) if forced_tool else None,
         )
         return response
-    
+
     def _callTool(self, tool_name: str, tool_args: Dict[str, Any]):
         """ Calls a tool with the given name and arguments."""
         return self.tools[tool_name].function(**tool_args)
-    
+
     def MakeTool(self,
                  tool_name: str,
                  tool_description: str,
@@ -248,11 +257,11 @@ def ToolDescription():
         type="function"
     )
 """
-        
+
         # Writing the python file to the tools directory
         with open(path.join(self.tools_path, f"{tool_name}.py"), "w") as f:
             f.write(pythonCode)
-        
+
         # now import the tool
         module = self._import_tool(self.tools_path, tool_name)
 
@@ -261,6 +270,38 @@ def ToolDescription():
         self.tools[tool_name].function = module.Run
         self.log(f"Tool {tool_name} created successfully.")
 
+    def _makePlan(self, goal:str):
+        """ Make a step by step plan for the system to follow."""
+        plan_prompt = self.make_plan_prompt(goal, self.planQueue)
+
+        response = self._baseInvoke(
+            messages=plan_prompt,
+            stream=False,
+            use_tools=True,
+            tools= {"make_plan": LLMTool(
+                name="make_plan",
+                description="Make a step by step plan for the system to follow.",
+                parameters=[LLMToolParameter(
+                    name="steps",
+                    type="List[Dict[str, str]]",
+                    description="The steps to be included in the plan in the format \{action : str, reason : str\}."
+            )])},
+            forced_tool="make_plan",
+            requiredParameters=["steps"],
+            type="function"
+        )
+
+        tools = self._getLLMResponseTools(response)
+        print(tools)
+        exit(0)
+
+    def _makePlanDefault(self, final_goal: str, plan: List[instruction]):
+        return [
+            {"role": "system", "content": f"You are a AI planner part of a larger system."},
+            {"role": "system", "content": f"The user gave the system this goal: <{final_goal}>."},
+            {"role": "system", "content": f"This is the current plan to achieve the goal:\n{[f"{i}. {x.action}, Reason: {x.reason}" for i, x in enumerate(plan)]}"},
+            {"role": "system", "content": f"Make any improvements to the plan to make it more efficient by using the \"make_plan\" tool."},
+        ]
 
 if __name__ == "__main__":
     prometheus = Prometheus(
@@ -273,15 +314,17 @@ if __name__ == "__main__":
         tools_path="./tools"
     )
 
-    prometheus.MakeTool(
-        tool_name="change_desktop_wallpaper",
-        tool_description="change the desktop wallpaper for the user",
-        tool_parameters=[ 
-            LLMToolParameter(name="image_path", type="str", description="The path to the image to set the wallpaper to.")
-        ],
-        tool_required_parameters=["image_path"],
-        instruction=instruction(
-            task="Create a python script that changes the desktop wallpaper on a arch linux wayland system using kde plasma.",
-            reason="To provide a programatic way to change the desktop wallpaper."
-        )
-    )
+    # prometheus.MakeTool(
+    #     tool_name="change_desktop_wallpaper",
+    #     tool_description="change the desktop wallpaper for the user",
+    #     tool_parameters=[ 
+    #         LLMToolParameter(name="image_path", type="str", description="The path to the image to set the wallpaper to.")
+    #     ],
+    #     tool_required_parameters=["image_path"],
+    #     instruction=instruction(
+    #         action="Create a python script that changes the desktop wallpaper on a arch linux wayland system using kde plasma.",
+    #         reason="To provide a programatic way to change the desktop wallpaper."
+    #     )
+    # )
+
+    prometheus._makePlan("Change my desktop wallpaper to a picture of a cat.")
