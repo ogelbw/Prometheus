@@ -1,5 +1,4 @@
 import json
-import dataclasses
 import logging
 
 from openai import OpenAI
@@ -8,43 +7,16 @@ from os import path, listdir
 from logging import getLogger, Logger, INFO, WARNING, ERROR, CRITICAL
 import importlib.util
 import re
-
-@dataclasses.dataclass
-class LLMToolParameter:
-    name: str
-    type: str
-    description: str
-
-@dataclasses.dataclass
-class LLMTool:
-    name: str
-    description: str
-    parameters: List[LLMToolParameter]
-    requiredParameters: List[str]
-    type: Literal["function", "data"]
-    function: Callable|None = None
-    asyncFunction: bool = False
-
-@dataclasses.dataclass
-class instruction:
-    """ An intruction given from one part of the system to another."""
-    action: str
-    reason: str
-
-@dataclasses.dataclass
-class InstructionResponse:
-    """ A response to an instruction."""
-    action: str
-    response: str
+from prometheus.tools.definitions import *
 
 class Prometheus:
     """
     Self tooling LLM agent.
     """
-    
+
     TOOL_MADE = 50
     TOOL_USED = 51
-    
+
     THINKING = 60
     ACTION_COMPLETE = 61
     ACTION_FAILED = 62
@@ -99,7 +71,7 @@ class Prometheus:
         if execution_prompt:
             self.take_step_prompt = execution_prompt
         else:
-            self.take_step_prompt = self._takeStepPromptDefault
+            self.take_step_prompt = self._takeActionStepPromptDefault
 
         self.planQueue:List[instruction] = []
         """ The queue of instructions to be executed by the system."""
@@ -158,7 +130,7 @@ class Prometheus:
             {"role": "system", "content": f"Update the plan (by making a new one) to capture the result of the previous action."},
         ]
     
-    def _takeStepPromptDefault(self, step: instruction, how: str):
+    def _takeActionStepPromptDefault(self, step: instruction, how: str):
         return [
             {"role": "system", "content": f"You are an AI responsible for taking actions in a system."},
             {"role": "system", "content": f"Here is the previous execution history of the system: {". ".join([x.response for x in self.executionHistory])}"},
@@ -269,8 +241,6 @@ class Prometheus:
             if forced_tool not in tools:
                 raise ValueError("The forced tool is not in the tools list.", forced_tool, tools.keys())
 
-        # self.log(f"Invoking the LLM API with messages: {messages}")
-
         response = self._client.chat.completions.create(
             model=self.active_model,
             messages=messages,
@@ -342,7 +312,7 @@ class Prometheus:
                 break # TODO see about removing this break, currently it takes only the first python code block as the LLM has a tendeciy to return multiple code blocks
 
         # prepend the imports and the ToolDescription function
-        pythonCode = f"""if __name__ != "__main__": from prometheus import LLMTool, LLMToolParameter
+        pythonCode = f"""if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
 
 {pythonCode}
 
@@ -472,8 +442,9 @@ def ToolDescription():
                     raise RuntimeError("Failed to make a plan.")
 
     def _executeStep(self):
-        """ Get the next stop in the plan, determain if the system is able to do it and if so do it, 
-        otherwise make the tools needed for this."""
+        """ Get the next step in the plan, determain if the system is able to do
+        it and if so do it, otherwise figureout what tools are needed for this
+        task and instruct the dev team to make them."""
 
         # get the next step in the plan
         step = self.planQueue[0]
@@ -487,23 +458,28 @@ def ToolDescription():
                 {"role": "system", "content": f"Here is the execution history of the system: \n{[f'{x.action} : {x.response}' for x in self.executionHistory]}"},
             ]
 
-        response = self._forcedFunctionInvoke(messages=prompt,
-                                              forced_tool="can_do_step",
-                                              tools={"can_do_step" : LLMTool(
-                                                  name="can_do_step",
-                                                  description="Determine if the system can complete the step with the tools available.",
-                                                  requiredParameters=["can_do_step", "how"],
-                                                  type="function",
-                                                  parameters=[
-                                                      LLMToolParameter(name="can_do_step",
-                                                                      type="bool",
-                                                                      description="A boolean value indicating if the system can complete the step.",),
-                                                      LLMToolParameter(name="how",
-                                                                      type="str",
-                                                                      description="A description of how to complete the step or a reason it cannot be completed.",),
-                                                  ]
-                                              )},
-                                              stream=False)
+        response = self._forcedFunctionInvoke(
+            messages=prompt,
+            forced_tool="can_do_step",
+            tools={"can_do_step" : LLMTool(
+                name="can_do_step",
+                description="Determine if the system can complete the step with the tools available.",
+                requiredParameters=["can_do_step", "how"],
+                type="function",
+                parameters=[
+                    LLMToolParameter(
+                        name="can_do_step",
+                        type="bool",
+                        description="A boolean value indicating if the system can complete the step.",
+                    ),
+                    LLMToolParameter(
+                        name="how",
+                        type="str",
+                        description="A description of how to complete the step or a reason it cannot be completed.",
+                    ),
+                ]
+            )},
+            stream=False)
 
         # get the response from the system and the reason for thinking
         # response = self._getLLMToolCall(self._getLLMResponseTools(response)[0])[1]
@@ -604,14 +580,13 @@ def ToolDescription():
                             LLMToolParameter(name="dev_comment",
                                             type="str",
                                             description="A comment to the developer of the tool. Any additional requirements not captured by the description.",),
-                            
                         ]
                     )},
                     forced_tool="make_tool"
                 )
 
+                # getting the description of the tool
                 try:
-                    # get the tool description from the system
                     toolDescriptionResponse = self._getLLMToolCall(self._getLLMResponseTools(response)[0])[1]
                     break
                 except:
@@ -648,24 +623,3 @@ def ToolDescription():
             self._executeStep()
         else:
             self.log("Task complete.")
-
-if __name__ == "__main__":
-    # setting up logger
-    logging.basicConfig(level=logging.INFO)
-    logger = getLogger(__name__)
-
-    # httpx is too verbose
-    logging.getLogger("httpx").setLevel(-5)
-
-    prometheus = Prometheus(
-        openAI_client = OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="None" # Required by the class but not used by ollama
-        ),
-        model="qwen2.5:latest",
-        tools={},
-        tools_path="./tools",
-        logger=logger
-    )
-
-    prometheus.Task(input("task prompt: "))

@@ -8,7 +8,7 @@ import psutil  # For additional system information; requires the 'psutil' packag
 if __name__ != "__main__":
     # when called directly this import doesn't work. The tool description 
     # cannot be testing in this state
-    from prometheus import LLMTool, LLMToolParameter
+    from prometheus.tools.definitions import LLMTool, LLMToolParameter
 
 def Run():
     # OS information

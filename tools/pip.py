@@ -2,7 +2,7 @@ import subprocess
 import sys
 from typing import List
 
-if __name__ != "__main__": from prometheus import LLMTool, LLMToolParameter
+if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
 
 def install_package(package_names):
     """Installs a package in the currently active Python environment."""

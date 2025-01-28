@@ -1,4 +1,4 @@
-if __name__ != "__main__": from prometheus import LLMTool, LLMToolParameter
+if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
 
 
 import subprocess
