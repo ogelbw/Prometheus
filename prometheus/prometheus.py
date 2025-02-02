@@ -24,7 +24,7 @@ class Prometheus:
     PLAN_MADE = 70
     PLAN_FAILED = 71
 
-    def __init__(self, 
+    def __init__(self,
                  openAI_client: OpenAI,
                  model: str,
                  tools: Dict[str, LLMTool],
@@ -43,7 +43,7 @@ class Prometheus:
         if model not in self.GetModels():
             raise ValueError("Model not available.")
         self.active_model = model
-        
+
 
         # import all the external tools
         self.tools_path = tools_path
@@ -66,7 +66,7 @@ class Prometheus:
             self.update_plan_prompt = make_plan_prompt
         else:
             self.update_plan_prompt = self._updatePlanPromptDefault
-        
+
         # set the constructor for the prompt for taking a step
         if execution_prompt:
             self.take_step_prompt = execution_prompt
@@ -93,10 +93,10 @@ class Prometheus:
     def GetModels(self):
         """ Returns the models available in the OpenAI API."""
         return [x["id"] for x in self._client.models.list().to_dict()["data"]]
-    
-    def _makeToolPromptDefault(self, 
-                                   tool_name: str, 
-                                   tool_description: str, 
+
+    def _makeToolPromptDefault(self,
+                                   tool_name: str,
+                                   tool_description: str,
                                    tool_parameters: List[LLMToolParameter],
                                    tool_required_parameters: List[str],
                                    comment: str):
@@ -129,7 +129,7 @@ class Prometheus:
             {"role": "system", "content": f"The systems previous action was: {previous_action_response.action} with the result: {previous_action_response.response}."},
             {"role": "system", "content": f"Update the plan (by making a new one) to capture the result of the previous action."},
         ]
-    
+
     def _takeActionStepPromptDefault(self, step: instruction, how: str):
         return [
             {"role": "system", "content": f"You are an AI responsible for taking actions in a system."},
@@ -142,14 +142,14 @@ class Prometheus:
 
     def _import_tool(self, tools_path: str, tool_name: str):
         """ Imports a tool from the tools directory as a module."""
-        
+
         # loading the python file as a module
         spec = importlib.util.spec_from_file_location(tool_name, path.join(tools_path, f"{tool_name}.py"))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
         return module
-    
+
     def _import_tools(self):
         """ Imports all of the tools in the tools directory."""
         tools = {}
@@ -157,23 +157,23 @@ class Prometheus:
         for tool_name in [x.split(".")[0] for x in listdir(tools_path) if x.endswith(".py")]:
             tools[tool_name] = self._import_tool(tools_path, tool_name)
 
-            # add the tool to the tools dictionary using the ToolDescription 
+            # add the tool to the tools dictionary using the ToolDescription
             # function in all tool scripts
             self.tools[tool_name] = tools[tool_name].ToolDescription()
             self.tools[tool_name].function = tools[tool_name].Run
             self.log(f"Tool {tool_name} imported successfully.")
 
     def _getLLMResponseTools(self, LLM_response) -> List[Any]:
-        """ Returns the tools used in the response from the LLM 
+        """ Returns the tools used in the response from the LLM
         (if it decided to use a tool)."""
         return LLM_response.choices[0].message.tool_calls
-    
+
     def _getLLMToolCall(self, LLM_response_tool):
         """ Returns a tuple of the name of the tool called and it's arguments.
         (An item from _getLLMResponseTools)"""
         self.log(f"Tool call: {LLM_response_tool.function.name} with arguments: {json.loads(LLM_response_tool.function.arguments)}", level=self.TOOL_USED)
         return (LLM_response_tool.function.name, json.loads(LLM_response_tool.function.arguments))
-    
+
     def _getFormattedTools(self, tools:Dict[str, LLMTool] = None):
         """ Formats the tools dictionary into a list of tools that can be passed to
         the OpenAI API."""
@@ -196,7 +196,7 @@ class Prometheus:
                 },
             }})
 
-            # The api doesn't understand "data" type. I am using it as an indicator 
+            # The api doesn't understand "data" type. I am using it as an indicator
             # for myself when we want a data in a json format. To do this we pretend
             # that a function exists that uses parameters which are the data we want.
             if tool.type == "data":
@@ -204,7 +204,7 @@ class Prometheus:
         return tmp
 
     def _formatToolChoice(self, tool_choice:str):
-        """ Formats a name of a tool into a dictionary that can be passed to the 
+        """ Formats a name of a tool into a dictionary that can be passed to the
         OpenAI API."""
         return  {"type": "function", "function": {"name": tool_choice}}
 
@@ -221,14 +221,14 @@ class Prometheus:
         """ Returns the complete response from the LLM when the response is not
         streamed"""
         return LLM_response.choices[0].message.content
-    
+
     def _LLMResponseIsToolCall(self, LLM_response):
         """ Returns whether the response from the LLM is a tool call."""
         return self._getResponseStopReason(LLM_response) == "tool_calls"
 
-    def _baseInvoke(self, 
+    def _baseInvoke(self,
                     messages: List[Dict[str, str]],
-                    stream: bool = False, 
+                    stream: bool = False,
                     use_tools: bool = False,
                     forced_tool: str = None,
                     tools: Dict[str, LLMTool] = None,
@@ -298,12 +298,12 @@ class Prometheus:
             use_tools=False
         )
 
-        # Note the self._LLMResponseIsToolCall won't work here because 
+        # Note the self._LLMResponseIsToolCall won't work here because
         # A 'function' is forced to be used. This is a thing with openAI's API
         pythonCode = ''
         completeResponse = self._getLLMResponseCompleteResponse(response)
 
-        # the response is a complete chat response since it fails to 
+        # the response is a complete chat response since it fails to
         # use reponse formatting. we can use regex to get the python code
         python_chunks = re.findall(r'```python\n(.*?)\n```', completeResponse, re.DOTALL)
         if python_chunks:
@@ -397,7 +397,7 @@ def ToolDescription():
             tools = self._getLLMResponseTools(response)
             for step in self._getLLMToolCall(tools[0])[1]['steps']:
                 self.planQueue.append(instruction(step['action'], step['reason']))
-            
+
             self.log(f"Plan made: {self.planQueue}", level=self.PLAN_MADE)
         except:
             raise RuntimeError("Failed to make a plan.")
@@ -407,7 +407,7 @@ def ToolDescription():
         if previous_action_response:
             plan_prompt = self.update_plan_prompt(goal, self.planQueue, previous_action_response)
         else:
-            plan_prompt = self.make_plan_prompt(goal, self.planQueue) 
+            plan_prompt = self.make_plan_prompt(goal, self.planQueue)
 
         for i in range(self.step_retry_attempts):
             # Invoke the LLM with a special tool for making a plan
@@ -432,7 +432,7 @@ def ToolDescription():
                 tools = self._getLLMResponseTools(response)
                 for step in self._getLLMToolCall(tools[0])[1]['steps']:
                     self.planQueue.append(instruction(step['action'], step['reason']))
-                
+
                 self.log(f"Plan made: {self.planQueue}", level=self.PLAN_MADE)
                 break
             except:
@@ -531,7 +531,7 @@ def ToolDescription():
                     resultOfAction = response['result']
                     self.executionHistory.append(InstructionResponse(step.action, resultOfAction))
                     self.log(f"Action complete: {step.action}. With result: {resultOfAction}", level=self.ACTION_COMPLETE)
-                    # TODO see about changing the plan as the system may have learned something new 
+                    # TODO see about changing the plan as the system may have learned something new
                     # self._makePlan(self.goal, self.executionHistory[-1])
                     break
 
@@ -594,7 +594,7 @@ def ToolDescription():
                         self.log(f"Failed to make a tool to complete the step: <{step.action}>. trying again...", level=self.ACTION_FAILED)
                     else:
                         raise RuntimeError(f"Failed to make a tool to complete the step: {step.action}. No more attempts.")
-            
+
             # put the parameters in the correct format
             tool_parameters = []
             for parameter in toolDescriptionResponse['tool_parameters'].keys():
