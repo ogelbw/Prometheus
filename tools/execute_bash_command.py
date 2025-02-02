@@ -16,7 +16,7 @@ def execute_bash_command(command):
     """
     try:
         # Run the command and get the output
-        result = subprocess.run(command.split(), capture_output=True, text=True, check=True)
+        result = subprocess.run(command, capture_output=True, text=True, check=True, shell=True)
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         return None, str(e.stderr).strip()
@@ -32,6 +32,7 @@ def Run(command):
     - output (str or None): Output of the executed command, if any. Otherwise, return None.
     - error (str or None): Error message in case of failure. Otherwise, return None.
     """
+    print("Running command:", command)
     result = execute_bash_command(command)
     if isinstance(result, tuple):
         output, error = result
@@ -43,7 +44,7 @@ def Run(command):
 
 if __name__ == "__main__":
     # Example usage
-    command = "ls -l"
+    command = 'if [ -d ~/Downloads ]; then echo "exists"; fi'
     output, error = Run(command)
     
     if output:
