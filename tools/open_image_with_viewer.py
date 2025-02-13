@@ -66,8 +66,8 @@ def ToolDescription():
     return LLMTool(
         name="open_image_with_viewer",
         description="Open the downloaded image with a suitable viewer application.",
-        parameters=[LLMToolParameter(name='image_path', type='str', description='Path to the downloaded image file'),
-LLMToolParameter(name='viewer_app', type='str', description='Name of the viewer application (e.g., Gwenview, XLookPhoto)')],
+        parameters=[LLMToolParameter(name='image_path', type='string', description='Path to the downloaded image file'),
+LLMToolParameter(name='viewer_app', type='string', description='Name of the viewer application (e.g., Gwenview, XLookPhoto)')],
         requiredParameters=['viewer_app', 'image_path'],
         type="function"
     )

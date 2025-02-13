@@ -1,8 +1,15 @@
 from typing import List, Any, Dict, override
+
+import openai
 from prometheus.tools.definitions import LLMTool
 from openai import OpenAI
 import json
 import enum
+from logging import Logger
+
+#TODO Replace all of the schema related thing with thhe pydantic equiverlent 
+# and use pydantic_function_tool to convert it to a json string schhema for the openai api
+#  thhis is for consistancy and to make it easier to work with the tools
 
 class logging_codes(enum.Enum):
     TOOL_MADE = 50
@@ -86,12 +93,13 @@ class llm_client_interactions:
 
 class llm_client_base:
     """ Base class for the LLM client interactions"""
-    def __init__(self, retry_attempts:int = 3):
+    def __init__(self, retry_attempts:int = 3, model:str = '', logger:Logger = None):
         self.retry_attempts = retry_attempts
         self.llm_interations = llm_client_interactions()
+        self.model = model
+        self.logger = logger
 
     def base_invoke(self,
-                    model:str,
                     messages: List[Dict[str, str]],
                     stream: bool = False,
                     use_tools: bool = False,
@@ -121,8 +129,8 @@ class llm_client_base:
                 response = self.llm_interations._getLLMToolCall(self.llm_interations._getLLMResponseTools(response)[0])[1]
                 break
             else:
-                print("The LLM response is not a tool call.")
-                print(response)
+                if self.logger is not None:
+                    self.logger.warning(f"Failed to force the tool call. Retrying attempt {i+1}/{self.retry_attempts}")
                 response = None
         return response
 
@@ -131,32 +139,39 @@ class llm_client_base:
         pass
 
 class llm_client_openai(llm_client_base):
-    def __init__(self, openai:OpenAI, retry_attempts = 3):
-        super().__init__(retry_attempts)
+    def __init__(self, openai:OpenAI, retry_attempts = 3, model:str = '', logger = None):
+        super().__init__(retry_attempts=retry_attempts, model=model, logger=logger)
         self.openAI_client= openai
-    
+
     @override
     def base_invoke(self,
-                    model:str,
                     messages: List[Dict[str, str]],
                     stream: bool = False,
                     use_tools: bool = False,
                     forced_tool: str = None,
                     tools: Dict[str, LLMTool] = None):
         """ Returns the Invoke the LLM api with the given messages."""
-        
+
         # see if a forced tool is being used
         if forced_tool and use_tools:
             if forced_tool not in tools:
                 raise ValueError(f"The forced tool '{forced_tool}' is not in the tools dictionary.")
         
-        return self.openAI_client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=stream,
-            tools = self.llm_interations._getFormattedTools(tools) if use_tools else [],
-            tool_choice = self.llm_interations._formatToolChoice(forced_tool) if forced_tool else None,
-        )
+        try:
+            llm_response = self.openAI_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=stream,
+                tools = self.llm_interations._getFormattedTools(tools) if use_tools else None,
+                tool_choice = self.llm_interations._formatToolChoice(forced_tool) if forced_tool else None,
+            )
+        except openai.RateLimitError as e:
+            if e.code == 'insufficient_quota':
+                raise ValueError("The OpenAI API has ran out of credits.")
+            else:
+                raise RuntimeError("You've somehow hit the rate limit of the OpenAI API.")
+        
+        return llm_response
 
     @override
     def GetModels(self):

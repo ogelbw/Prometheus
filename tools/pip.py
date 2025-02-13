@@ -19,7 +19,7 @@ def ToolDescription():
         parameters=[LLMToolParameter(
             name="package_names",
             description="Name of the packages to install.",
-            type="List[str]"
+            type="array"
         )],
         requiredParameters=["package_names"],
         type="function"

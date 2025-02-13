@@ -10,65 +10,48 @@ import re
 from prometheus.tools.definitions import *
 from prometheus.utils import llm_client_interactions, logging_codes, llm_client_base
 from prometheus.devTeam.toolCreator import Python_Tool_developer
+from prometheus.default_prompts import _makeToolPromptDefault, _makePlanPromptDefault, _updatePlanPromptDefault, _takeActionStepPromptDefault
 
 class Prometheus:
     """
     Self tooling LLM agent.
     """
     def __init__(self,
-                 llm_client: llm_client_base,
+                 llm_client_executer: llm_client_base,
+                 llm_client_dev: llm_client_base,
+                 llm_client_reviewer: llm_client_base,
                  tools_path: str = "./tools", # Path to the tools directory
                  make_tool_prompt: Callable = None,
                  make_plan_prompt: Callable = None,
                  execution_prompt: Callable = None,
                  step_retry_attempts: int = 5,
                  logger: Logger = None,
-                 dev_llm_model: str = "qwen2.5:latest",
-                 reviewer_llm_model: str = "qwen2.5:latest"
                  ) -> None:
-        self._client = llm_client
         self.logger = logger
-        self.llm_interactions = llm_client_interactions(self)
-        self.pythonToolMaker = Python_Tool_developer(tools_path=tools_path, 
-                                                     step_retry_attempts=step_retry_attempts, 
-                                                     logger=self.log,
-                                                     dev_llm_model=dev_llm_model,
-                                                     reviewer_llm_model=reviewer_llm_model)
-
-        # Check if the model is available
-        if dev_llm_model not in self._client.GetModels():
-            raise ValueError("dev Model not available.")
-        elif reviewer_llm_model not in self._client.GetModels():
-            raise ValueError("reviewer Model not available.")
 
         # import all the external tools
         self.tools_path = tools_path
         self.tools = {}
         self._import_tools()
 
-        # set the constructor for the prompt for creating python tools
-        if make_tool_prompt:
-            self.create_tool_prompt = make_tool_prompt
-        else:
-            self.create_tool_prompt = self._makeToolPromptDefault
+        # setting the default prompts
+        self.create_tool_prompt = make_tool_prompt if make_tool_prompt else _makeToolPromptDefault
+        self.make_plan_prompt   = make_plan_prompt if make_plan_prompt else _makePlanPromptDefault
+        self.update_plan_prompt = make_plan_prompt if make_plan_prompt else _updatePlanPromptDefault
+        self.take_step_prompt   = execution_prompt if execution_prompt else _takeActionStepPromptDefault
 
-        # set the constructor for the prompt for evaluating the plan
-        if make_plan_prompt:
-            self.make_plan_prompt = make_plan_prompt
-        else:
-            self.make_plan_prompt = self._makePlanPromptDefault
-
-        # set the constructor for the prompt for evaluating the plan
-        if make_plan_prompt:
-            self.update_plan_prompt = make_plan_prompt
-        else:
-            self.update_plan_prompt = self._updatePlanPromptDefault
-
-        # set the constructor for the prompt for taking a step
-        if execution_prompt:
-            self.take_step_prompt = execution_prompt
-        else:
-            self.take_step_prompt = self._takeActionStepPromptDefault
+        self._llmExecutorClient = llm_client_executer
+        self._llmDevClient      = llm_client_dev
+        self._llmReviewerClient = llm_client_reviewer
+        self.llm_interactions = llm_client_interactions(self)
+        self.pythonToolMaker = Python_Tool_developer(tools_path=tools_path, 
+                                                     step_retry_attempts=step_retry_attempts, 
+                                                     logger=self.log,
+                                                     llm_dev_client=self._llmDevClient,
+                                                     llm_reviewer_client=self._llmReviewerClient,
+                                                     make_tool_prompt_template=self.create_tool_prompt,
+                                                     review_tool_prompt_template=self.create_tool_prompt, # TODO <-- Make a review tool prompt
+                                                     pip_tool=self.tools['pip'])
 
         self.planQueue:List[instruction] = []
         """ The queue of instructions to be executed by the system."""
@@ -86,52 +69,6 @@ class Prometheus:
         """ Logs a message to the logger."""
         if self.logger:
             self.logger.log(level, message)
-
-    def _makeToolPromptDefault(self,
-                               tool_name: str,
-                               tool_description: str,
-                               tool_parameters: List[LLMToolParameter],
-                               tool_required_parameters: List[str],
-                               comment: str):
-        """ Default prompt to create a tool."""
-        return [
-            {"role": "system", "content": f"You are an experienced python AI programmer who has been tasked with creating a python script called {tool_name} with the description: {tool_description}, for part of a larger system."},
-            {"role": "system", "content": f"The tool must have the following parameters: {', '.join([f'{x.name} ({x.type}) : {x.description}' for x in tool_parameters])}."},
-            {"role": "system", "content": f"The following are required parameters: {', '.join(tool_required_parameters)}. The rest are optional."},
-            {"role": "system", "content": f"Create a single python script. "},
-            {"role": "system", "content": f"The script must have a global function called 'Run' so it can be called by the system INCLUDE THIS FUNCTION."},
-            {"role": "system", "content": f"Additionally this comment to the developer was left: {comment}"},
-        ]
-
-    def _makePlanPromptDefault(self, final_goal: str, plan: List[instruction]):
-        return [
-            {"role": "system", "content": f"You are a AI planner part of a larger system. This system can make it's own tools in python and is already logged into the user's machine."},
-            {"role": "system", "content": f"The user gave the system this goal: <{final_goal}>."},
-            {"role": "system", "content": f"This is the current plan to achieve the goal:\n{[f"{i}. {x.action}, Reason: {x.reason}" for i, x in enumerate(plan)]}"},
-            {"role": "system", "content": f"The system has access to these tools: [{', '.join(self.tools.keys())}]"},
-            {"role": "system", "content": f"The system can create new tools in python."},
-            {"role": "system", "content": f"Create a plan to achieve the user's goal."},
-        ]
-
-    def _updatePlanPromptDefault(self, final_goal: str, plan: List[instruction], previous_action_response: InstructionResponse):
-        return [
-            {"role": "system", "content": f"You are a AI planner part of a larger system. This system can make it's own tools in python and is already logged into the user's machine."},
-            {"role": "system", "content": f"The user gave the system this goal: <{final_goal}>."},
-            {"role": "system", "content": f"This is the current plan to achieve the goal:\n{[f"{i}. {x.action}, Reason: {x.reason}" for i, x in enumerate(plan)]}"},
-            {"role": "system", "content": f"The system has access to these tools: [{', '.join(self.tools.keys())}]"},
-            {"role": "system", "content": f"The systems previous action was: {previous_action_response.action} with the result: {previous_action_response.response}."},
-            {"role": "system", "content": f"Update the plan (by making a new one) to capture the result of the previous action."},
-        ]
-
-    def _takeActionStepPromptDefault(self, step: instruction, how: str):
-        return [
-            {"role": "system", "content": f"You are an AI responsible for taking actions in a system."},
-            {"role": "system", "content": f"Here is the previous execution history of the system: {". ".join([x.response for x in self.executionHistory])}"},
-            {"role": "system", "content": f"The user gave the system this goal: <{self.goal}>."},
-            {"role": "system", "content": f"The current step is to: <{step.action}> because: <{step.reason}>."},
-            {"role": "system", "content": f"The system thinks this can be done by: <{how}>."},
-            {"role": "system", "content": f"Do this step as described."},
-        ]
 
     def _import_tool(self, tools_path: str, tool_name: str):
         """ Imports a tool from the tools directory as a module."""
@@ -160,7 +97,7 @@ class Prometheus:
         """ Calls a tool with the given name and arguments."""
         return self.tools[tool_name].function(**tool_args)
 
-    def MakeTool(self,
+    def CreatePythonTool(self,
                  tool_name: str,
                  tool_description: str,
                  tool_parameters: List[LLMToolParameter],
@@ -182,11 +119,10 @@ class Prometheus:
 
     def _makePlan(self, goal:str):
         """ Make a step by step plan for the system to follow."""
-        plan_prompt = self.make_plan_prompt(goal, self.planQueue)
+        plan_prompt = self.make_plan_prompt(goal, self.planQueue, self.tools)
 
         # Invoke the LLM with a special tool for making a plan
-        response = self._client.base_invoke(
-            model=self.pythonToolMaker.dev_llm_model,
+        response = self._llmExecutorClient.base_invoke(
             messages=plan_prompt,
             stream=False,
             use_tools=True,
@@ -214,14 +150,13 @@ class Prometheus:
     def _makePlan(self, goal:str, previous_action_response: InstructionResponse | None = None):
         """ Make a step by step plan for the system to follow."""
         if previous_action_response:
-            plan_prompt = self.update_plan_prompt(goal, self.planQueue, previous_action_response)
+            plan_prompt = self.update_plan_prompt(goal, self.planQueue, previous_action_response, self.tools)
         else:
-            plan_prompt = self.make_plan_prompt(goal, self.planQueue)
+            plan_prompt = self.make_plan_prompt(goal, self.planQueue, self.tools)
 
         for i in range(self.step_retry_attempts):
             # Invoke the LLM with a special tool for making a plan
-            response = self._client.base_invoke(
-                model=self.pythonToolMaker.reviewer_llm_model,
+            response = self._llmDevClient.base_invoke(
                 messages=plan_prompt,
                 stream=False,
                 use_tools=True,
@@ -268,8 +203,7 @@ class Prometheus:
                 {"role": "system", "content": f"Here is the execution history of the system: \n{[f'{x.action} : {x.response}' for x in self.executionHistory]}"},
             ]
 
-        response = self._client.force_function_call_invoke(
-            model=self.pythonToolMaker.reviewer_llm_model,
+        response = self._llmExecutorClient.force_function_call_invoke(
             messages=prompt,
             forced_tool="can_do_step",
             tools={"can_do_step" : LLMTool(
@@ -303,9 +237,8 @@ class Prometheus:
             for i in range(self.step_retry_attempts):
                 # attempt the action
                 self.log(f"Attempting action: {step.action}. Attempt: {i+1}", level=logging_codes.THINKING.value)
-                actionStep = self._client.base_invoke(
-                    model=self.pythonToolMaker.reviewer_llm_model,
-                    messages=self.take_step_prompt(step, how),
+                actionStep = self._llmExecutorClient.base_invoke(
+                    messages=self.take_step_prompt(step, how, self.executionHistory, self.goal),
                     stream=False,
                     use_tools=True,
                     tools=self.tools
@@ -339,13 +272,14 @@ class Prometheus:
 
             toolDescriptionResponse = None
             for i in range(self.step_retry_attempts*2):
-                # get the system to make a description of a tool to do the step
-                response = self._client.base_invoke(
-                    model=self.pythonToolMaker.dev_llm_model,
+
+                # get the system to make a description of the tool that allows
+                # the system to complete the step using the dev llm.
+                response = self._llmDevClient.base_invoke(
                     messages=[
                         {"role": "system", "content": f"You are an AI responsible for making tools for a system."},
-                        {"role": "system", "content": f"The system has the step: ({step.action}) but thinks it can't do this because: <{how}>."},
-                        {"role": "system", "content": f"Make a tool so the system is able to complete this step."},
+                        {"role": "system", "content": f"The system has the step: ({step.action}) but thinks it can't do this because: ({how})."},
+                        {"role": "system", "content": f"Make a description of a tool so the system is able to complete this step by using the 'make_tool' tool."},
                     ],
                     stream=False,
                     use_tools=True,
@@ -371,11 +305,8 @@ class Prometheus:
                                             type="str",
                                             description="A comment to the developer of the tool. Any additional requirements not captured by the description.",),
                         ]
-                    )},
-                    forced_tool="make_tool"
-                )
+                    )}, forced_tool="make_tool")
 
-                # getting the description of the tool
                 try:
                     toolDescriptionResponse = self.llm_interactions._getLLMToolCall(self.llm_interactions._getLLMResponseTools(response)[0])[1]
                     break
@@ -396,11 +327,11 @@ class Prometheus:
                 ))
 
             # make the tool described
-            self.MakeTool(toolDescriptionResponse['tool_name'],
-                          toolDescriptionResponse['tool_description'],
-                          tool_parameters,
-                          toolDescriptionResponse['tool_required_parameters'],
-                          toolDescriptionResponse['dev_comment'])
+            self.CreatePythonTool(toolDescriptionResponse['tool_name'],
+                                  toolDescriptionResponse['tool_description'],
+                                  tool_parameters,
+                                  toolDescriptionResponse['tool_required_parameters'],
+                                  toolDescriptionResponse['dev_comment'])
 
     def generate_summary(self):
         """ Generate a summary of the system's actions."""
@@ -412,8 +343,7 @@ class Prometheus:
         ]
 
         return self.llm_interactions._getLLMResponseCompleteResponse(
-            self._client.base_invoke(
-                model=self.pythonToolMaker.reviewer_llm_model,
+            self._llmExecutorClient.base_invoke(
                 messages=messages,
                 stream=False,
                 use_tools=False,

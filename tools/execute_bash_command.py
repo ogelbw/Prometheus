@@ -56,7 +56,7 @@ def ToolDescription():
     return LLMTool(
         name="execute_bash_command",
         description="Executes a bash command on the system.",
-        parameters=[LLMToolParameter(name='command', type='str', description='The bash command to execute.')],
+        parameters=[LLMToolParameter(name='command', type='string', description='The bash command to execute.')],
         requiredParameters=['command'],
         type="function"
     )

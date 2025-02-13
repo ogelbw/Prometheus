@@ -4,7 +4,7 @@ from typing import List, Literal, Callable
 @dataclasses.dataclass
 class LLMToolParameter:
     name: str
-    type: str
+    type: Literal["string", "array", "number", "boolean", "integer", "object", "enum"]
     description: str
 
 @dataclasses.dataclass
