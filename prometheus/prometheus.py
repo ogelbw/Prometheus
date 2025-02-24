@@ -1,12 +1,7 @@
-import json
-import logging
-
-from openai import OpenAI
-from typing import Callable, List, Literal, Dict, Any
+from typing import Callable, List, Dict, Any
 from os import path, listdir
-from logging import getLogger, Logger, INFO, WARNING, ERROR, CRITICAL
+from logging import Logger, INFO
 import importlib.util
-import re
 from prometheus.tools.definitions import *
 from prometheus.utils import llm_client_interactions, logging_codes, llm_client_base
 from prometheus.devTeam.toolCreator import Python_Tool_developer
@@ -191,7 +186,6 @@ class Prometheus:
             plan_prompt = self.make_plan_prompt(goal, self.planQueue, self.tools)
 
         for i in range(self.step_retry_attempts):
-            # Invoke the LLM with a special tool for making a plan
             response = self._llmDevClient.base_invoke(
                 messages=plan_prompt,
                 stream=False,
