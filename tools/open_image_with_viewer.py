@@ -1,73 +1,74 @@
-if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
+if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter 
+from typing import List
+from pydantic import BaseModel, Field
 
 
+import os
 import subprocess
-from typing import Optional
+import platform
 
-def open_image_with_viewer(image_path: str, viewer_app: str, viewer_app_path: Optional[str] = None) -> None:
-    """
-    Open an image file with a specified viewer application.
-    
-    Parameters:
-        image_path (str): Path to the downloaded image file.
-        viewer_app (str): Name of the viewer application.
-        viewer_app_path (Optional[str]): Custom path to the viewer application. 
-                                         Optional and defaults to None.
+def open_image_with_viewer(image_files: str, viewer: str) -> str:
+    # Determine the platform
+    current_platform = platform.system()
+    processes = []
 
-    Returns:
-        None
-    """
-    
-    def get_viewer_command(viewer_app: str, viewer_app_path: Optional[str]) -> Optional[str]:
-        if not viewer_app or not viewer_app.strip():
-            print("No viewer app provided.")
-            return None
+    for image in image_files:
+        # Validate the image file path
+        if not os.path.isfile(image):
+            return f"Error: The file '{image}' does not exist."
         
-        if viewer_app.lower() in ["gwenview", "xlookphoto"]:
-            command = [viewer_app.lower()] if not viewer_app_path else [viewer_app, viewer_app_path]
-            command += [image_path]
-        elif viewer_app.lower().startswith("custom:"):
-            custom_path, _, image_name = viewer_app.partition(":")
-            viewer_command = f"'{custom_path.strip()}'" if custom_path else "'not_a_viewer'"
-            image_command = f"'{image_path}'"
-            command = [viewer_command, image_command]
-        else:
-            print(f"Unknown viewer application: {viewer_app}")
-            return None
+        # Check the viewer
+        if viewer.lower() != "gwenview":
+            return f"Error: Unsupported viewer '{viewer}'. Only 'gwenview' is supported."
         
-        return " ".join(command)
-    
-    viewer_command = get_viewer_command(viewer_app, viewer_app_path)
-    
-    if viewer_command:
         try:
-            subprocess.run(viewer_command, shell=True)
-        except FileNotFoundError as e:
-            print(f"Error opening image with the specified application: {e}")
+            if current_platform == "Linux":
+                # Attempt to open the image with gwenview on Linux
+                processes.append(subprocess.Popen([viewer, image]) ) # ensure gwenview is installed
+            elif current_platform == "Windows":
+                # On Windows, we'll need to use start command to open the file
+                processes.append(subprocess.Popen(["start", viewer, image], shell=True))
+            else:
+                return f"Error: Unsupported operating system '{current_platform}'."
         except Exception as e:
-            print(f"An error occurred: {e}")
-
-def Run(image_path: str, viewer_app: str, **kwargs) -> None:
-    """
-    Entry point for running the open_image_with_viewer function.
+            return f"Error when attempting to open the image: {str(e)}"
     
-    Parameters:
-        image_path (str): Path to the downloaded image file.
-        viewer_app (str): Name of the viewer application.
-        kwargs: Additional keyword arguments. Optional in this context but included for flexibility.
-    """
-    open_image_with_viewer(image_path, viewer_app, **kwargs)
+    # Wait for all processes to finish
+    for process in processes:
+        process.wait()
 
-if __name__ == "__main__":
-    # Example usage
-    Run("/home/ogelbw/Documents/Prometheus/red_panda_image.jpg", "gwenview")
+    return ""
+
+def Run(image_file: List[str], viewer: str = "gwenview") -> str:
+    return open_image_with_viewer(image_file, viewer)
+
+# To test the function, you can call Run(image_file, viewer)
+# Example usage (this should be commented out or removed in actual implementation):
+# if __name__ == "__main__":
+#     print(Run("path/to/your/image.jpg"))
 
 def ToolDescription():
+    class tool_paramerters(BaseModel):
+        image_files: List[str] = Field(..., description="The paths to the image files that needs to be opened.")
+        viewer: str = Field(..., description="The name of the viewer application to be used, e.g., gwenview.")
+        pass
+
     return LLMTool(
         name="open_image_with_viewer",
-        description="Open the downloaded image with a suitable viewer application.",
-        parameters=[LLMToolParameter(name='image_path', type='string', description='Path to the downloaded image file'),
-LLMToolParameter(name='viewer_app', type='string', description='Name of the viewer application (e.g., Gwenview, XLookPhoto)')],
-        requiredParameters=['viewer_app', 'image_path'],
+        description="Open an image file with the gwenview image viewer.",
+        parameters=tool_paramerters,
+        requiredParameters=['image_file', 'viewer'],
         type="function"
     )
+
+if __name__ == "__main__":
+    import os
+    image_files = []
+    viewer = "gwenview"
+
+    # Get the image files from the current directory
+    for file in os.listdir('/home/ogelbw/Pictures/sd/other/decorative/'):
+        if file.endswith(".jpg") or file.endswith(".png"):
+            image_files.append(os.path.join('/home/ogelbw/Pictures/sd/other/decorative/', file))
+
+    print(Run(image_files, viewer))

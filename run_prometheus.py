@@ -46,13 +46,13 @@ if __name__ == "__main__":
         logger=logger,
     )
 
-    # prometheus.Task(input("task prompt: "))
-    prometheus.CreatePythonTool(
-        tool_name="list_desktop_files",
-        tool_description="List all files on the desktop for the current user.",
-        tool_parameters=[
-        ],
-        tool_required_parameters=[
-        ],
-        developer_comment="This tool should be able to list all files on the desktop for the current user."
-    )
+    prometheus.Task(input("task prompt: "))
+    # prometheus.CreatePythonTool(
+    #     tool_name="list_desktop_files",
+    #     tool_description="List all files on the desktop for the current user.",
+    #     tool_parameters=[
+    #     ],
+    #     tool_required_parameters=[
+    #     ],
+    #     developer_comment="This tool should be able to list all files on the desktop for the current user."
+    # )

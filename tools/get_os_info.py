@@ -3,7 +3,8 @@ import platform
 import getpass
 import shutil
 from datetime import datetime
-import psutil  # For additional system information; requires the 'psutil' package
+import psutil
+from pydantic import BaseModel  # For additional system information; requires the 'psutil' package
 
 if __name__ != "__main__":
     # when called directly this import doesn't work. The tool description 
@@ -70,10 +71,14 @@ def Run():
     return os_info
 
 def ToolDescription():
+
+    class tool_paramerters(BaseModel):
+        pass
+
     return LLMTool(
         name="get_os_info",
         description="Get information about the OS.",
-        parameters=[],
+        parameters=tool_paramerters,
         requiredParameters=[],
         type="function"
     )

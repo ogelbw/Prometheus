@@ -41,13 +41,16 @@ class Python_Tool_developer:
                     },
                     {
                         "role": "system",
-                        "content": f"Install all the needed packages via the pip tool for the following python code.",
+                        "content": f"Install all the needed packages via the pip tool for the following python code: \n{pythonCode}",
                     },
-                    {"role": "system", "content": f"{pythonCode}"},
+                    {
+                        "role": "system",
+                        "content": f"Note the name for the python packages may differ from the import names, make sure to install the correct packages.",
+                    }
                 ],
                 stream=False,
                 use_tools=True,
-                tools={"pip": self.pip_tool},
+                tools= {"pip": self.pip_tool},
                 forced_tool="pip",
             )
 
@@ -127,16 +130,21 @@ class Python_Tool_developer:
                 pythonCode += f"\n{chunk}"
                 break  # TODO see about removing this break, currently it takes only the first python code block as the LLM has a tendeciy to return multiple code blocks
 
-        # prepend the imports and the ToolDescription function
-        pythonCode = f"""if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
+        # Add the needed imports and the tool description
+        pythonCode = f"""if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter \nfrom pydantic import BaseModel, Field
 
 {pythonCode}
 
 def ToolDescription():
+    class tool_paramerters(BaseModel):
+{'\n'.join([f"        {parameter.name}: {parameter.type} = Field(..., description=\"{parameter.description}\")" for parameter in tool_parameters if parameter.name in tool_required_parameters])}\n
+{'\n'.join([f"        {parameter.name}: Optional[{parameter.type}] = Field(None, description=\"{parameter.description}\")" for parameter in tool_parameters if parameter.name not in tool_required_parameters])}
+        pass
+
     return LLMTool(
         name="{tool_name}",
         description="{tool_description}",
-        parameters=[{",".join([f"LLMToolParameter(name='{parameter.name}', type='{parameter.type}', description='{parameter.description}')" for parameter in tool_parameters])}],
+        parameters=tool_paramerters,
         requiredParameters={tool_required_parameters},
         type="function"
     )

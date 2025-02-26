@@ -55,17 +55,7 @@ class llm_client_interactions:
                     "function": {
                         "name": tool.name,
                         "description": tool.description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                parameter.name: {
-                                    "type": parameter.type,
-                                    "description": parameter.description,
-                                }
-                                for parameter in tool.parameters
-                            },
-                            "required": tool.requiredParameters,
-                        },
+                        "parameters": tool.parameters.model_json_schema(),
                     },
                 }
             )
@@ -123,7 +113,6 @@ class llm_client_base:
 
     def force_function_call_invoke(
         self,
-        model: str,
         messages: List[Dict[str, str]],
         forced_tool: str,
         tools: Dict[str, LLMTool],
@@ -132,7 +121,6 @@ class llm_client_base:
         """Tries to force the LLM to use a tool. to be called with a preformatted tool"""
         for i in range(self.retry_attempts):
             response = self.base_invoke(
-                model=model,
                 messages=messages,
                 stream=stream,
                 use_tools=True,
