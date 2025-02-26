@@ -4,6 +4,8 @@ if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLM
 import os
 import platform
 
+from pydantic import BaseModel
+
 def list_desktop_files():
     # Get the current user's desktop path based on the OS
     if platform.system() == "Windows":
@@ -27,10 +29,14 @@ if __name__ == "__main__":
     print(Run())
 
 def ToolDescription():
+
+    class tool_paramerters(BaseModel):
+        pass
+
     return LLMTool(
         name="list_desktop_files",
         description="List all files on the desktop for the current user.",
-        parameters=[],
+        parameters=tool_paramerters(),
         requiredParameters=[],
         type="function"
     )

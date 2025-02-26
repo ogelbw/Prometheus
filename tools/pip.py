@@ -2,6 +2,8 @@ import subprocess
 import sys
 from typing import List
 
+from pydantic import BaseModel
+
 if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
 
 def install_package(package_names):
@@ -13,14 +15,14 @@ def install_package(package_names):
         print(f"Failed to install package '{" ".join([package_name for package_name in package_names])}'.")
 
 def ToolDescription():
+
+    class tool_paramerters(BaseModel):
+        package_names: List[str]
+
     return LLMTool(
         name="pip",
         description="Installs pip packages in the currently active Python environment.",
-        parameters=[LLMToolParameter(
-            name="package_names",
-            description="Name of the packages to install.",
-            type="array"
-        )],
+        parameters=tool_paramerters(),
         requiredParameters=["package_names"],
         type="function"
     )

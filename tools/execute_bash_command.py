@@ -2,6 +2,7 @@ if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLM
 
 
 import subprocess
+from pydantic import BaseModel
 
 def execute_bash_command(command):
     """
@@ -53,10 +54,15 @@ if __name__ == "__main__":
         print("Error:", error)
 
 def ToolDescription():
+
+    class tool_paramerters(BaseModel):
+        command: str
+        pass
+
     return LLMTool(
         name="execute_bash_command",
         description="Executes a bash command on the system.",
-        parameters=[LLMToolParameter(name='command', type='string', description='The bash command to execute.')],
+        parameters=tool_paramerters(),
         requiredParameters=['command'],
         type="function"
     )

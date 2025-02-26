@@ -142,25 +142,11 @@ class Prometheus:
         plan_prompt = self.make_plan_prompt(goal, self.planQueue, self.tools)
 
         # Invoke the LLM with a special tool for making a plan
-        response = self._llmExecutorClient.base_invoke(
+        response = self._llmDevClient.base_invoke(
             messages=plan_prompt,
             stream=False,
             use_tools=True,
-            tools={
-                "make_plan": LLMTool(
-                    name="make_plan",
-                    description="Make a step by step plan for the system to follow.",
-                    requiredParameters=["steps"],
-                    type="function",
-                    parameters=[
-                        LLMToolParameter(
-                            name="steps",
-                            type="List[Dict[str, str]]",
-                            description="The steps to be included in the plan in the format {action : str, reason : str}.",
-                        )
-                    ],
-                )
-            },
+            tools={"make_plan": MakePlanTool()},
             forced_tool="make_plan",
         )
 
@@ -174,57 +160,6 @@ class Prometheus:
         except:
             raise RuntimeError("Failed to make a plan.")
 
-    def _makePlan(
-        self, goal: str, previous_action_response: InstructionResponse | None = None
-    ):
-        """Make a step by step plan for the system to follow."""
-        if previous_action_response:
-            plan_prompt = self.update_plan_prompt(
-                goal, self.planQueue, previous_action_response, self.tools
-            )
-        else:
-            plan_prompt = self.make_plan_prompt(goal, self.planQueue, self.tools)
-
-        for i in range(self.step_retry_attempts):
-            response = self._llmDevClient.base_invoke(
-                messages=plan_prompt,
-                stream=False,
-                use_tools=True,
-                tools={
-                    "make_plan": LLMTool(
-                        name="make_plan",
-                        description="Make a step by step plan for the system to follow.",
-                        requiredParameters=["steps"],
-                        type="function",
-                        parameters=[
-                            LLMToolParameter(
-                                name="steps",
-                                type="List[Dict[str, str]]",
-                                description="The steps to be included in the plan in the format {action : str, reason : str}.",
-                            )
-                        ],
-                    )
-                },
-                forced_tool="make_plan",
-            )
-
-            try:
-                tools = self.llm_interactions._getLLMResponseTools(response)
-                for step in self.llm_interactions._getLLMToolCall(tools[0])[1]["steps"]:
-                    self.planQueue.append(instruction(step["action"], step["reason"]))
-
-                self.log(
-                    f"Plan made: {self.planQueue}", level=logging_codes.PLAN_MADE.value
-                )
-                break
-            except:
-                if i < self.step_retry_attempts - 1:
-                    self.log(
-                        f"Failed to make a plan. Trying again...",
-                        level=logging_codes.PLAN_FAILED.value,
-                    )
-                else:
-                    raise RuntimeError("Failed to make a plan.")
 
     def _executeStep(self):
         """Get the next step in the plan, determain if the system is able to do
@@ -254,7 +189,7 @@ class Prometheus:
             },
             {
                 "role": "system",
-                "content": f"Here is the execution history of the system: \n{[f'{x.action} : {x.response}' for x in self.executionHistory]}",
+                "content": f"Here is the execution history of the system: \n{[f'Action:{x.action}\nResponse:{x.response}\n\n' for x in self.executionHistory]}",
             },
         ]
 
@@ -262,24 +197,7 @@ class Prometheus:
             messages=prompt,
             forced_tool="can_do_step",
             tools={
-                "can_do_step": LLMTool(
-                    name="can_do_step",
-                    description="Determine if the system can complete the step with the tools available.",
-                    requiredParameters=["can_do_step", "how"],
-                    type="function",
-                    parameters=[
-                        LLMToolParameter(
-                            name="can_do_step",
-                            type="bool",
-                            description="A boolean value indicating if the system can complete the step.",
-                        ),
-                        LLMToolParameter(
-                            name="how",
-                            type="str",
-                            description="A description of how to complete the step or a reason it cannot be completed.",
-                        ),
-                    ],
-                )
+                "can_do_step": CanDoStepTool()
             },
             stream=False,
         )
@@ -377,45 +295,7 @@ class Prometheus:
                     stream=False,
                     use_tools=True,
                     tools={
-                        "make_tool": LLMTool(
-                            name="make_tool",
-                            description="Makes a python tool for the system.",
-                            requiredParameters=[
-                                "tool_name",
-                                "tool_description",
-                                "tool_parameters",
-                                "tool_required_parameters",
-                                "dev_comment",
-                            ],
-                            type="function",
-                            parameters=[
-                                LLMToolParameter(
-                                    name="tool_name",
-                                    type="str",
-                                    description="The name of the tool.",
-                                ),
-                                LLMToolParameter(
-                                    name="tool_description",
-                                    type="str",
-                                    description="A description of the tool.",
-                                ),
-                                LLMToolParameter(
-                                    name="tool_parameters",
-                                    type="Dict[str, Tuple[str, str]]",
-                                    description="The parameters of the tool in the format: key: parameter_name[str], value: (parameter_description[str], parameter_type[str])",
-                                ),
-                                LLMToolParameter(
-                                    name="tool_required_parameters",
-                                    type="List[str]",
-                                    description="The required parameters of the tool.",
-                                ),
-                                LLMToolParameter(
-                                    name="dev_comment",
-                                    type="str",
-                                    description="A comment to the developer of the tool. Any additional requirements not captured by the description.",
-                                ),
-                            ],
-                        )
+                        "make_tool": MakePythonToolTool(),
                     },
                     forced_tool="make_tool",
                 )
@@ -439,14 +319,19 @@ class Prometheus:
 
             # put the parameters in the correct format
             tool_parameters = []
-            for parameter in toolDescriptionResponse["tool_parameters"].keys():
+            for parameter in toolDescriptionResponse["tool_parameters"]:
+
+                # make sure the parameters have been correctly formatted
+                if not parameter.keys() == {"name", "type", "description"}:
+                    raise ValueError(' LLM response for tool parameters is not correctly formatted. Expected: {"name", "type", "description"}', parameter)
+                if not parameter["type"] in ["str", "int", "list", "float", "bool"]:
+                    raise ValueError(f"LLM response for tool parameters has an invalid type: {parameter['type']}")
+
                 tool_parameters.append(
                     LLMToolParameter(
-                        name=parameter,
-                        type=toolDescriptionResponse["tool_parameters"][parameter][1],
-                        description=toolDescriptionResponse["tool_parameters"][
-                            parameter
-                        ][0],
+                        name=parameter['name'],
+                        type=parameter['type'],
+                        description=parameter['description'],
                     )
                 )
 

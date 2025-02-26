@@ -55,17 +55,7 @@ class llm_client_interactions:
                     "function": {
                         "name": tool.name,
                         "description": tool.description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                parameter.name: {
-                                    "type": parameter.type,
-                                    "description": parameter.description,
-                                }
-                                for parameter in tool.parameters
-                            },
-                            "required": tool.requiredParameters,
-                        },
+                        "parameters": tool.parameters.model_json_schema(),
                     },
                 }
             )
