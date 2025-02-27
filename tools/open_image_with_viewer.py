@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 import os
 import subprocess
 import platform
+from pydantic import BaseModel, Field
 
 def open_image_with_viewer(image_files: str, viewer: str) -> str:
     # Determine the platform
