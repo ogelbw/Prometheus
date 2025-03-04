@@ -3,7 +3,7 @@ from os import path, listdir
 from logging import Logger, INFO
 import importlib.util
 from prometheus.tools.definitions import *
-from prometheus.utils import llm_client_interactions, logging_codes, llm_client_base
+from prometheus.utils import *
 from prometheus.devTeam.toolCreator import Python_Tool_developer
 from prometheus.default_prompts import (
     _makeToolPromptDefault,
@@ -66,14 +66,14 @@ class Prometheus:
             pip_tool=self.tools["pip"],
         )
 
-        self.planQueue: List[instruction] = []
+        self.currentPlan: str = ""
         """ The queue of instructions to be executed by the system."""
 
         self.goal = ""
         """ The goal given to the system by the user (the main task)."""
 
         self.executionHistory: List[InstructionResponse] = []
-        """ The history of the instructions given to the system and the responses (carries forward context)."""
+        """ The chat history of the llm client."""
 
         self.step_retry_attempts = step_retry_attempts
         """ The number of times to retry a step if it fails."""
@@ -139,233 +139,50 @@ class Prometheus:
 
     def _makePlan(self, goal: str):
         """Make a step by step plan for the system to follow."""
-        plan_prompt = self.make_plan_prompt(goal, self.planQueue, self.tools)
+        plan_prompt = self.executionHistory + self.make_plan_prompt(goal)
 
-        # Invoke the LLM with a special tool for making a plan
-        response = self._llmDevClient.base_invoke(
-            messages=plan_prompt,
-            stream=False,
-            use_tools=True,
-            tools={"make_plan": MakePlanTool()},
-            forced_tool="make_plan",
-        )
-
-        try:
-            tools = self.llm_interactions._getLLMResponseTools(response)
-            for step in self.llm_interactions._getLLMToolCall(tools[0])[1]["steps"]:
-                self.planQueue.append(instruction(step["action"], step["reason"]))
-            self.log(
-                f"Plan made: {self.planQueue}", level=logging_codes.PLAN_MADE.value
+        # Get the llm to generate a plan message that will be 'pinned' to the
+        # message history. Note use_tools is set to True so that the LLm knows
+        # about the tool it have access to, If false the api doesn't send them.
+        for i in range(self.step_retry_attempts):
+            llm_response = self._llmDevClient.base_invoke(
+                messages=plan_prompt,
+                stream=False,
+                use_tools=True,
+                tools=self.llm_interactions._getFormattedTools(self.tools),
             )
-        except:
-            raise RuntimeError("Failed to make a plan.")
+
+            if llm_response.choices[0].finish_reason != "stop":
+                self.log(
+                    f"Failed to make a plan, llm returned stop reason: {llm_response.choices[0].finish_reason}",
+                    level=logging_codes.PLAN_FAILED.value,
+                )
+                continue
+            self.currentPlan = llm_response.choices[0].message.content
+            self.log(
+                f"Plan made: \n{self.currentPlan}\n",
+                level=logging_codes.PLAN_MADE.value,
+            )
 
 
     def _executeStep(self):
-        """Get the next step in the plan, determain if the system is able to do
-        it and if so do it, otherwise figure out what tools are needed for this
-        task and instruct the dev team to make them."""
-
-        # get the next step in the plan
-        step = self.planQueue[0]
-
-        # ask the system if it is able to do this with the tools avaliable
-        prompt = [
-            {
-                "role": "system",
-                "content": f"You are part of a task completion system. You are to state if the follow step in a plan can be completed: \n {step.action} \n Reason: {step.reason}",
-            },
-            {
-                "role": "system",
-                "content": f"Is the system able to complete the step with the given tools?",
-            },
-            {
-                "role": "system",
-                "content": f"The tools available to the system are: \n{"\n".join([f"{tool} : {self.tools[tool].description}" for tool in self.tools.keys()])}.",
-            },
-            {
-                "role": "system",
-                "content": f"The system cannot do anything outside of the tools it has available.",
-            },
-            {
-                "role": "system",
-                "content": f"Here is the execution history of the system: \n{[f'Action:{x.action}\nResponse:{x.response}\n\n' for x in self.executionHistory]}",
-            },
-        ]
-
-        response = self._llmExecutorClient.force_function_call_invoke(
-            messages=prompt,
-            forced_tool="can_do_step",
-            tools={
-                "can_do_step": CanDoStepTool()
-            },
-            stream=False,
-        )
-
-        # get the response from the system and the reason for thinking
-        # response = self._getLLMToolCall(self.llm_interactions._getLLMResponseTools(response)[0])[1]
-        can_do_step = response["can_do_step"]
-        how = response["how"]
-
-        if can_do_step:
-            self.log(
-                f"Prometheus thinks they can do: ({step.action}) by: ({how}). Attempting action.",
-                level=logging_codes.THINKING.value,
-            )
-
-            for i in range(self.step_retry_attempts):
-                # attempt the action
-                self.log(
-                    f"Attempting action: {step.action}. Attempt: {i+1}",
-                    level=logging_codes.THINKING.value,
-                )
-                actionStep = self._llmExecutorClient.base_invoke(
-                    messages=self.take_step_prompt(
-                        step, how, self.executionHistory, self.goal
-                    ),
-                    stream=False,
-                    use_tools=True,
-                    tools=self.tools,
-                )
-
-                # check to see if the response is a tool call
-                if self.llm_interactions._LLMResponseIsToolCall(actionStep):
-                    # Call the tool
-                    toolName, toolArgs = self.llm_interactions._getLLMToolCall(
-                        self.llm_interactions._getLLMResponseTools(actionStep)[0]
-                    )
-                    toolResult = self._callTool(toolName, toolArgs)
-
-                    # # get the generated response and add it to the execution history
-                    self.executionHistory.append(
-                        InstructionResponse(step.action, str(toolResult))
-                    )
-                    self.log(
-                        f"Action complete: {step.action}. With result: {str(toolResult)}",
-                        level=logging_codes.ACTION_COMPLETE.value,
-                    )
-                    # TODO see about changing the plan as the system may have learned something new
-                    # self._makePlan(self.goal, self.executionHistory[-1])
-                    break
-
-                else:
-                    # assume the action failed
-                    if i < self.step_retry_attempts - 1:
-                        self.log(
-                            f"Action failed: {step.action}. trying again...",
-                            level=logging_codes.ACTION_FAILED.value,
-                        )
-                    else:
-                        self.log(
-                            f"Action failed: {step.action}. No more attempts.",
-                            level=logging_codes.ACTION_FAILED.value,
-                        )
-                        raise RuntimeError(
-                            f"Action failed: {step.action}. No more attempts."
-                        )
-            self.planQueue.pop(0)
-
-        # if the system cannot do the step make a tool to do it
-        # TODO there should be a check here to see if making a new tool would
-        # if it is the case that a new tool would not help then execution should
-        # end here
-        else:
-            self.log(
-                f"Prometheus thinks they cannot do: ({step.action}) because: ({how}). Making a tool to do it.",
-                level=logging_codes.THINKING.value,
-            )
-
-            toolDescriptionResponse = None
-            for i in range(self.step_retry_attempts * 2):
-
-                # get the system to make a description of the tool that allows
-                # the system to complete the step using the dev llm.
-                response = self._llmDevClient.base_invoke(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": f"You are an AI responsible for making tools for a system.",
-                        },
-                        {
-                            "role": "system",
-                            "content": f"The system has the step: ({step.action}) but thinks it can't do this because: ({how}).",
-                        },
-                        {
-                            "role": "system",
-                            "content": f"Make a description of a tool so the system is able to complete this step by using the 'make_tool' tool.",
-                        },
-                    ],
-                    stream=False,
-                    use_tools=True,
-                    tools={
-                        "make_tool": MakePythonToolTool(),
-                    },
-                    forced_tool="make_tool",
-                )
-
-                try:
-                    toolDescriptionResponse = self.llm_interactions._getLLMToolCall(
-                        self.llm_interactions._getLLMResponseTools(response)[0]
-                    )[1]
-                    break
-                except:
-                    if i < self.step_retry_attempts - 1:
-                        self.log(
-                            f"Failed to make a tool to complete the step: <{step.action}>. trying again...",
-                            level=logging_codes.ACTION_FAILED.value,
-                        )
-                        continue
-                    else:
-                        raise RuntimeError(
-                            f"Failed to make a tool to complete the step: {step.action}. No more attempts."
-                        )
-
-            # put the parameters in the correct format
-            tool_parameters = []
-            for parameter in toolDescriptionResponse["tool_parameters"]:
-
-                # make sure the parameters have been correctly formatted
-                if not parameter.keys() == {"name", "type", "description"}:
-                    raise ValueError(' LLM response for tool parameters is not correctly formatted. Expected: {"name", "type", "description"}', parameter)
-                if not parameter["type"] in ["str", "int", "list", "float", "bool"]:
-                    raise ValueError(f"LLM response for tool parameters has an invalid type: {parameter['type']}")
-
-                tool_parameters.append(
-                    LLMToolParameter(
-                        name=parameter['name'],
-                        type=parameter['type'],
-                        description=parameter['description'],
-                    )
-                )
-
-            # make the tool described
-            self.CreatePythonTool(
-                toolDescriptionResponse["tool_name"],
-                toolDescriptionResponse["tool_description"],
-                tool_parameters,
-                toolDescriptionResponse["tool_required_parameters"],
-                toolDescriptionResponse["dev_comment"],
-            )
+        pass
 
     def generate_summary(self):
         """Generate a summary of the system's actions."""
 
-        messages = [
+        messages = filter_system_messages(self.executionHistory) + [
             {
                 "role": "system",
                 "content": f"You are an AI responsible for generating a summary of the system's actions.",
             },
             {
                 "role": "system",
-                "content": f"The system has completed the following actions:\n {'\n'.join([f'Action: {x.action}\nResponse:{x.response}' for x in self.executionHistory])}.",
-            },
-            {
-                "role": "system",
-                "content": f"Generate a summary of the system's actions to respond to the user who gave the task: {self.goal}.",
+                "content": f"Generate a summary of the system's actions to who informed the system to: {self.goal}.",
             },
         ]
 
-        return self.llm_interactions._getLLMResponseCompleteResponse(
+        return self.llm_interactions._getLLMResponseMessage(
             self._llmExecutorClient.base_invoke(
                 messages=messages,
                 stream=False,
@@ -381,7 +198,7 @@ class Prometheus:
         self._makePlan(goal)
 
         # execute the plan
-        while self.planQueue.__len__() > 0:
+        while self.currentPlan.__len__() > 0:
             self._executeStep()
         else:
             self.log("Task complete.\n", level=logging_codes.TASK_COMPLETE.value)

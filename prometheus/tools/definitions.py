@@ -2,10 +2,30 @@ import dataclasses
 from typing import Dict, List, Literal, Callable, Type
 from pydantic import BaseModel, Field
 
-# TODO Replace the LLMToolParameter with a pydantic model, this is cleaner and more consistent
-# also this would mean that LLMTool wouldn't need to have a list of parameters as it is now a schema
+# Messages supported by the openai API
+def System_msg(msg: str, name: str = None, use_developer: bool = False):
+    apiMsg = { "content": msg }
+    apiMsg.update({ "name": name } if name else {})
+    apiMsg.update({ "role": "developer" if use_developer else "system" })
+    return apiMsg
+
+def Tool_response(call_id: str, content: str):
+    return { "role": "tool", "content": content, "tool_call_id": call_id }
+
+def Assistant_msg(msg: str, name: str = None, tool_calls: list = []):
+    apiMsg = { "content": msg, "role": "assistant"}
+    apiMsg.update({ "name": name } if name else {})
+    apiMsg.update({ "tool_calls": tool_calls } if tool_calls else {})
+    return apiMsg
+
+def User_msg(msg: str, name: str = None):
+    apiMsg = { "content": msg, "role": "user" }
+    apiMsg.update({ "name": name } if name else {})
+    return apiMsg
+
 @dataclasses.dataclass
 class LLMToolParameter:
+    """ The parameters for generating a tool, not to be used in the description of a tool."""
     name: str
     type: Literal["str", "list", "int", "float", "boolean", "object"]
     description: str
@@ -60,19 +80,16 @@ class CanDoStepTool(LLMTool):
             type="function"
        )
 
+#TODO Implement this
 class MakePythonToolToolParameters(BaseModel):
-    tool_name: str = Field(..., description="The self descriptive name of the python tool.")
-    tool_description: str = Field(..., description="A description of the tool.") 
-    tool_parameters: list = Field(..., description="The parameters of the tool in the format: [{\"name\" : str, \"type\" : Literal[\"str\", \"int\", \"list\", \"float\", \"bool\"], \"description\" : str}...].")
-    tool_required_parameters: List[str] = Field(..., description="The required parameters for the tool")
-    dev_comment: str = Field(..., description="A comment to the developer of the tool. Any additional requirements not captured by the description.")
+    wanted_changes: str = Field(..., description="The changes to be made to the current plan and the reasons for making the changes.")
 
-class MakePythonToolTool(LLMTool):
+class UpdatePlanTool(LLMTool):
     def __init__(self):
         super().__init__(
-            name="make_tool",
-            description="Makes a python tool for the system.",
+            name="update_plan",
+            description="Make changes to the current plan the system is following.",
             parameters=MakePythonToolToolParameters,
-            requiredParameters=["tool_name", "tool_description", "tool_parameters", "tool_required_parameters", "dev_comment"],
+            requiredParameters=["wanted_changes"],
             type="function"
         )

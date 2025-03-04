@@ -1,5 +1,7 @@
+from pydantic import BaseModel, Field
 from prometheus.prometheus import Prometheus
-from prometheus.utils import llm_client_openai
+from prometheus.tools.definitions import System_msg, LLMTool
+from prometheus.utils import llm_client_openai, llm_client_interactions
 from openai import OpenAI
 import logging
 from os import getenv as env
@@ -10,21 +12,20 @@ def test_tool_creation():
 if __name__ == "__main__":
     load_dotenv()
 
-    # setting up logger
+    # logging
     logging.basicConfig(level=logging.WARN)
+    logging.getLogger("httpx").disabled = True
     logger = logging.getLogger(__name__)
 
-    # httpx is too verbose
-    logging.getLogger("httpx").disabled = True
-
+    # initailize the LLM agent
     prometheus = Prometheus(
-        llm_client_executer = llm_client_openai(
+        llm_client_executer=llm_client_openai(
             openai=OpenAI(
-                base_url="http://localhost:11434/v1",
-                api_key="None" # Required by the class but not used by ollama
+                api_key=env("OPENAI_API_KEY"),
             ),
             retry_attempts=5,
-            model="qwen2.5:latest",),
+            model="gpt-4o-mini-2024-07-18"
+        ),
 
         llm_client_dev=llm_client_openai(
             openai=OpenAI(
@@ -46,7 +47,33 @@ if __name__ == "__main__":
         logger=logger,
     )
 
-    prometheus.Task(input("task prompt: "))
+    # Tasks can then be given to the agent by:
+    # prometheus.Task(input("task prompt: "))
+
+    class LLMToolParameter(BaseModel):
+        test: str = Field(..., description="A test parameter.")
+
+    llm_response = prometheus._llmDevClient.base_invoke(
+        messages=[
+            System_msg("List all the tools available to you."),
+        ],
+        stream=False,
+        use_tools=True,
+        tools={
+            "A test tool": LLMTool(
+                name="test_tool",
+                description="A test tool for testing.",
+                parameters=LLMToolParameter,
+                requiredParameters=[],
+                type="function",
+                function=test_tool_creation
+            )
+        },
+    )
+
+    print(llm_response.choices[0].message.content)
+    print(llm_response.choices[0].finish_reason)
+
     # prometheus.CreatePythonTool(
     #     tool_name="list_desktop_files",
     #     tool_description="List all files on the desktop for the current user.",
