@@ -166,6 +166,53 @@ class Prometheus:
 
 
     def _executeStep(self):
+
+        # Note anything within "Quotes" is just seen as data byt the LLM, it will 
+        # be untrusted data. Tool responses should probable be wrapped in this.
+
+        # 1. tell the LLM to follow it's plan by using one of it's tools
+        # 2. Put the return of the tool into the execution history
+        # 3. Tell the LLM to think about the result of the tool and update it's
+        # plan if needed.
+        # 4. Repeat until the LLM calls the finish/task_complete tool.
+
+        # "You are an AI assistant that is about to be given a task by a user. 
+        # You are to carry out the task by calling various tools that allow you
+        # to interact with the computer you are running on in order for you to
+        # carry out the user's task.
+        # 
+        # You also have access to 3 special tools: update_plan, make_tool and task_complete.
+        # 
+        # Call update_plan to make updates to your plan that is pinned as the 
+        # most recent message in the chat.
+        # 
+        # Call make_tool to create a new python tool for you to extend your 
+        # capabilities, allowing you to do things you previously couldn't in
+        # order to carry out the user's task.
+        #
+        # Finally call task_complete to report that you have completed the
+        # user's task. You will provide a summary of what you have done to the
+        # user at this point.
+        #
+        # Apart from the user proving you with a task you will not be 
+        # interacting with them, this chat is for you to call tools, plan and 
+        # reason about the result of tool calls in order for you to update your 
+        # approach to the task.
+        # "
+
+        # User msg (named)
+
+        # if execuiton history len() <= 2 then have the llm make a plan 
+        # " Make a plan step by step for how you are going to achieve the user's 
+        # task. You should mention the tools you are going to call, what you are 
+        # going to do with the result of that call (if anything) and the reason for doing it.
+        #  You should also mention what you are going to do if the tool call fails."
+        # This prompt should either be a user or dev prompt and should be removed after the LLM responds.
+
+        # then loop: try with and without prompting the ai to take the next step, it might just be able to do it.
+        # "Carry out the next step in your plan or make changes to your plan if needed. Call task_complete when you have completed the user's task."
+
+        # We need to split the tool response across multiple messages if it is too long
         pass
 
     def generate_summary(self):
