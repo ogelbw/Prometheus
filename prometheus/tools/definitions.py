@@ -1,11 +1,46 @@
+import enum
 import dataclasses
 from typing import Dict, List, Literal, Callable, Type
 from pydantic import BaseModel, Field
 
-# TODO Replace the LLMToolParameter with a pydantic model, this is cleaner and more consistent
-# also this would mean that LLMTool wouldn't need to have a list of parameters as it is now a schema
+class logging_codes(enum.Enum):
+    TOOL_MADE = 50
+    TOOL_USED = 51
+
+    THINKING = 60
+    ACTION_COMPLETE = 61
+    ACTION_FAILED = 62
+
+    PLAN_MADE = 70
+    PLAN_FAILED = 71
+
+    TASK_COMPLETE = 80
+
+
+# Messages supported by the openai API
+def System_msg(msg: str, name: str = None, use_developer: bool = False):
+    apiMsg = { "content": msg }
+    apiMsg.update({ "name": name } if name else {})
+    apiMsg.update({ "role": "developer" if use_developer else "system" })
+    return apiMsg
+
+def Tool_response(call_id: str, content: str):
+    return { "role": "tool", "content": content, "tool_call_id": call_id }
+
+def Assistant_msg(msg: str, name: str = None, tool_calls: list = []):
+    apiMsg = { "content": msg, "role": "assistant"}
+    apiMsg.update({ "name": name } if name else {})
+    apiMsg.update({ "tool_calls": tool_calls } if tool_calls else {})
+    return apiMsg
+
+def User_msg(msg: str, name: str = None):
+    apiMsg = { "content": msg, "role": "user" }
+    apiMsg.update({ "name": name } if name else {})
+    return apiMsg
+
 @dataclasses.dataclass
 class LLMToolParameter:
+    """ The parameters for generating a tool, not to be used in the description of a tool."""
     name: str
     type: Literal["str", "list", "int", "float", "boolean", "object"]
     description: str
@@ -33,46 +68,29 @@ class InstructionResponse:
     response: str
 
 # --- Special LLM tool calls ---
-class MakePlanToolParameters(BaseModel):
-    steps: list = Field(..., description="The steps for the plan in the format: [{\"action\" : str, \"reason\" : str}...]. The action should be an instruction to be followed therefor it should say HOW to do that action such as 'use a bash command to list all the files in X' or 'filter the files by running Y'.")
-
-class MakePlanTool(LLMTool):
-    def __init__(self):
-        super().__init__(
-            name="make_plan",
-            description="Makes a step by step plan for the system to follow.",
-            parameters=MakePlanToolParameters,
-            requiredParameters=["steps"],
-            type="function"
-        )
-
-class CanDoStepToolParameters(BaseModel):
-    can_do_step: bool = Field(..., description="A boolean value indicating if the system can complete the step.")
-    how: str = Field(..., description="A description of how to complete the step or a reason it cannot be completed. This must be descriptive.")
-
-class CanDoStepTool(LLMTool):
-    def __init__(self):
-        super().__init__(
-            name="can_do_step",
-            description="Determine if the system can complete the step with the tools available.",
-            parameters=CanDoStepToolParameters,
-            requiredParameters=["can_do_step", "how"],
-            type="function"
-       )
-
+#TODO Implement this
 class MakePythonToolToolParameters(BaseModel):
-    tool_name: str = Field(..., description="The self descriptive name of the python tool.")
-    tool_description: str = Field(..., description="A description of the tool.") 
-    tool_parameters: list = Field(..., description="The parameters of the tool in the format: [{\"name\" : str, \"type\" : Literal[\"str\", \"int\", \"list\", \"float\", \"bool\"], \"description\" : str}...].")
-    tool_required_parameters: List[str] = Field(..., description="The required parameters for the tool")
-    dev_comment: str = Field(..., description="A comment to the developer of the tool. Any additional requirements not captured by the description.")
+    description: str = Field(..., description="A description of the tool to be made.")
 
-class MakePythonToolTool(LLMTool):
+# class UpdatePlanTool(LLMTool):
+#     def __init__(self):
+#         super().__init__(
+#             name="update_plan",
+#             description="Make changes to the current plan the system is following.",
+#             parameters=MakePythonToolToolParameters,
+#             requiredParameters=["wanted_changes"],
+#             type="function"
+#         )
+
+class TaskCompleteToolParameters(BaseModel):
+    pass
+
+class TaskCompleteTool(LLMTool):
     def __init__(self):
         super().__init__(
-            name="make_tool",
-            description="Makes a python tool for the system.",
-            parameters=MakePythonToolToolParameters,
-            requiredParameters=["tool_name", "tool_description", "tool_parameters", "tool_required_parameters", "dev_comment"],
+            name="task_complete",
+            description="Report that the system has completed the user's task.",
+            parameters=TaskCompleteToolParameters,
+            requiredParameters=[],
             type="function"
         )

@@ -33,7 +33,6 @@ def Run(command):
     - output (str or None): Output of the executed command, if any. Otherwise, return None.
     - error (str or None): Error message in case of failure. Otherwise, return None.
     """
-    print("Running command:", command)
     result = execute_bash_command(command)
     if isinstance(result, tuple):
         output, error = result

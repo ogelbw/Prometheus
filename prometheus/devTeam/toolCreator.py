@@ -118,7 +118,7 @@ class Python_Tool_developer:
         # Note the self._LLMResponseIsToolCall won't work here because
         # A 'function' is forced to be used. This is a thing with openAI's API
         pythonCode = ""
-        generated_tool = self.llm_interactions._getLLMResponseCompleteResponse(
+        generated_tool = self.llm_interactions._getLLMResponseMessage(
             generated_tool
         )
 
