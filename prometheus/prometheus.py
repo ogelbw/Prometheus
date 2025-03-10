@@ -10,6 +10,7 @@ from prometheus.default_prompts import (
     _makePlanPromptDefault,
     _updatePlanPromptDefault,
     _takeActionStepPromptDefault,
+    _taskStartPromptDefault
 )
 
 
@@ -27,6 +28,7 @@ class Prometheus:
         make_tool_prompt: Callable = None,
         make_plan_prompt: Callable = None,
         execution_prompt: Callable = None,
+        task_start_prompt: Callable = None,
         step_retry_attempts: int = 5,
         logger: Logger = None,
     ) -> None:
@@ -51,6 +53,10 @@ class Prometheus:
             execution_prompt if execution_prompt else _takeActionStepPromptDefault
         )
 
+        self.task_start_prompt = (
+            task_start_prompt if task_start_prompt else _taskStartPromptDefault
+        )
+
         self._llmExecutorClient = llm_client_executer
         self._llmDevClient = llm_client_dev
         self._llmReviewerClient = llm_client_reviewer
@@ -72,7 +78,7 @@ class Prometheus:
         self.goal = ""
         """ The goal given to the system by the user (the main task)."""
 
-        self.executionHistory: List[InstructionResponse] = []
+        self.executionHistory: List[dict] = []
         """ The chat history of the llm client."""
 
         self.step_retry_attempts = step_retry_attempts
@@ -137,35 +143,19 @@ class Prometheus:
         self.tools[tool_name].function = module.Run
         self.log(f"Tool {tool_name} created successfully.")
 
-    def _makePlan(self, goal: str):
-        """Make a step by step plan for the system to follow."""
-        plan_prompt = self.executionHistory + self.make_plan_prompt(goal)
+    def _makePlan(self, goal: str|None = None):
+        """Make a step by step plan for the system to follow. If the goal parameter is empty then it just prompts from execution history"""
 
-        # Get the llm to generate a plan message that will be 'pinned' to the
-        # message history. Note use_tools is set to True so that the LLm knows
-        # about the tool it have access to, If false the api doesn't send them.
-        for i in range(self.step_retry_attempts):
-            llm_response = self._llmDevClient.base_invoke(
-                messages=plan_prompt,
-                stream=False,
-                use_tools=True,
-                tools=self.llm_interactions._getFormattedTools(self.tools),
-            )
-
-            if llm_response.choices[0].finish_reason != "stop":
-                self.log(
-                    f"Failed to make a plan, llm returned stop reason: {llm_response.choices[0].finish_reason}",
-                    level=logging_codes.PLAN_FAILED.value,
+        if goal is not None:
+            self.executionHistory.append(User_msg(msg=goal, name='Jed'))
+            self.executionHistory += self.make_plan_prompt(
+                name='System',
+                use_developer= self._llmExecutorClient.use_developer if type(self._llmExecutorClient) is llm_client_openai else False
                 )
-                continue
-            self.currentPlan = llm_response.choices[0].message.content
-            self.log(
-                f"Plan made: \n{self.currentPlan}\n",
-                level=logging_codes.PLAN_MADE.value,
-            )
 
 
-    def _executeStep(self):
+
+    def _executeStep(self, user_task: str|None = None):
 
         # Note anything within "Quotes" is just seen as data byt the LLM, it will 
         # be untrusted data. Tool responses should probable be wrapped in this.
@@ -206,13 +196,24 @@ class Prometheus:
         # " Make a plan step by step for how you are going to achieve the user's 
         # task. You should mention the tools you are going to call, what you are 
         # going to do with the result of that call (if anything) and the reason for doing it.
-        #  You should also mention what you are going to do if the tool call fails."
+        #  You should also mention what you are going to do if the tool call fails for each step of the plan."
         # This prompt should either be a user or dev prompt and should be removed after the LLM responds.
 
         # then loop: try with and without prompting the ai to take the next step, it might just be able to do it.
         # "Carry out the next step in your plan or make changes to your plan if needed. Call task_complete when you have completed the user's task."
 
         # We need to split the tool response across multiple messages if it is too long
+
+        if self.executionHistory.__len__() == 0:
+            self.executionHistory.append(self.task_start_prompt(
+                use_developer= (self._llmExecutorClient.use_developer if type(self._llmExecutorClient) is llm_client_openai else False) # this only makes sense for o1 o3-mini models
+            ))
+        
+        if user_task is not None:
+            # Tell the LLM to plan for the user's task
+            self._makePlan(user_task)
+
+
         pass
 
     def generate_summary(self):
