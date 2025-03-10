@@ -40,8 +40,8 @@ def open_image_with_viewer(image_files: str, viewer: str) -> str:
 
     return ""
 
-def Run(image_file: List[str], viewer: str = "gwenview") -> str:
-    return open_image_with_viewer(image_file, viewer)
+def Run(image_files: List[str], viewer: str = "gwenview") -> str:
+    return open_image_with_viewer(image_files, viewer)
 
 # To test the function, you can call Run(image_file, viewer)
 # Example usage (this should be commented out or removed in actual implementation):
