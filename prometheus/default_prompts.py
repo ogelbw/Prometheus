@@ -74,60 +74,20 @@ def _makePlanPromptDefault(name:str|None = None, use_developer:bool = False):
         msg="""Make a plan step by step for how you are going to achieve the user's task. You should mention the tools you are going to call, what you are going to do with the result of that call (if anything) and the reason for doing it. You should also mention what you are going to do if the tool call fails for each step of the plan"""
         )]
 
-def _updatePlanPromptDefault(
-    final_goal: str,
-    plan: List[instruction],
-    previous_action_response: InstructionResponse,
-    tools: List[dict],
-):
-    return [
-        {
-            "role": "system",
-            "content": f"You are a AI planner part of a larger system. This system can make it's own tools in python and is already logged into the user's machine.",
-        },
-        {
-            "role": "system",
-            "content": f"The user gave the system this goal: <{final_goal}>.",
-        },
-        {
-            "role": "system",
-            "content": f"This is the current plan to achieve the goal:\n{[f"{i}. {x.action}, Reason: {x.reason}" for i, x in enumerate(plan)]}",
-        },
-        {
-            "role": "system",
-            "content": f"The system has access to these tools: [{', '.join(tools.keys())}]",
-        },
-        {
-            "role": "system",
-            "content": f"The systems previous action was: {previous_action_response.action} with the result: {previous_action_response.response}.",
-        },
-        {
-            "role": "system",
-            "content": f"Update the plan (by making a new one) to capture the result of the previous action.",
-        },
-    ]
+def _updatePlanPromptDefault(goal:str, name:str|None = None, use_developer:bool = False):
+      return [System_msg(
+        name=name,
+        use_developer=use_developer,
+        msg=f"""Update the step by step plan for how you are going to achieve the user's task which is: "{goal}". You should mention the tools you are going to call, what you are going to do with the result of that call (if anything) and the reason for doing it. You should also mention what you are going to do if the tool call fails for each step of the plan"""
+        )]
 
 
 def _takeActionStepPromptDefault(
-    step: instruction, how: str, executionHistory: List[InstructionResponse], goal: str
+    use_developer: bool = False,
 ):
     return [
-        {
-            "role": "system",
-            "content": f"You are an AI responsible for taking actions in a system.",
-        },
-        {
-            "role": "system",
-            "content": f"Here is the previous execution history of the system: {". ".join([x.response for x in executionHistory])}",
-        },
-        {"role": "system", "content": f"The user gave the system this goal: <{goal}>."},
-        {
-            "role": "system",
-            "content": f"The current step is to: <{step.action}> because: <{step.reason}>.",
-        },
-        {
-            "role": "system",
-            "content": f"The system thinks this can be done by: <{how}>.",
-        },
-        {"role": "system", "content": f"Do this step as described."},
+        System_msg(
+            use_developer=use_developer,
+            msg="""Carry out the next step in your plan or make changes to your plan if needed. Call task_complete when you have completed the user's task or if the user's task is impossible."""
+        )
     ]

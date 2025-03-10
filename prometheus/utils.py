@@ -17,20 +17,6 @@ def filter_system_messages(messages: List[dict]):
     """Filters out the system messages from the messages."""
     return [x for x in messages if (x["role"] != "system" and x["role"] != "developer")]
 
-class logging_codes(enum.Enum):
-    TOOL_MADE = 50
-    TOOL_USED = 51
-
-    THINKING = 60
-    ACTION_COMPLETE = 61
-    ACTION_FAILED = 62
-
-    PLAN_MADE = 70
-    PLAN_FAILED = 71
-
-    TASK_COMPLETE = 80
-
-
 class llm_client_interactions:
     def __init__(self, step_retry_attempts: int = 3):
         self.step_retry_attempts = step_retry_attempts
