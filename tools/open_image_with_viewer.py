@@ -12,6 +12,7 @@ def open_image_with_viewer(image_files: str, viewer: str) -> str:
     # Determine the platform
     current_platform = platform.system()
     processes = []
+    opened = 0
 
     for image in image_files:
         # Validate the image file path
@@ -26,6 +27,7 @@ def open_image_with_viewer(image_files: str, viewer: str) -> str:
             if current_platform == "Linux":
                 # Attempt to open the image with gwenview on Linux
                 processes.append(subprocess.Popen([viewer, image]) ) # ensure gwenview is installed
+                opened += 1
             elif current_platform == "Windows":
                 # On Windows, we'll need to use start command to open the file
                 processes.append(subprocess.Popen(["start", viewer, image], shell=True))
@@ -37,8 +39,7 @@ def open_image_with_viewer(image_files: str, viewer: str) -> str:
     # Wait for all processes to finish
     for process in processes:
         process.wait()
-
-    return ""
+    return f"Successfully opened {opened} images with {viewer}."
 
 def Run(image_files: List[str], viewer: str = "gwenview") -> str:
     return open_image_with_viewer(image_files, viewer)
