@@ -80,11 +80,13 @@ class llm_client_interactions:
 class llm_client_base:
     """Base class for the LLM client interactions"""
 
-    def __init__(self, retry_attempts: int = 3, model: str = "", logger: Logger = None):
+    def __init__(self, retry_attempts: int = 3, model: str = "", logger: Logger = None, use_developer: bool = False):
         self.retry_attempts = retry_attempts
         self.llm_interations = llm_client_interactions()
         self.model = model
         self.logger = logger
+        self.use_developer = use_developer
+        """Use 'Developer' role instead of 'System' role in the messages, openai change"""
 
     def base_invoke(
         self,
@@ -104,7 +106,7 @@ class llm_client_base:
         tools: Dict[str, LLMTool],
         stream: bool = False,
     ):
-        """Tries to force the LLM to use a tool. to be called with a preformatted tool"""
+        """Tries to force the LLM to use a tool. to be called with a preformatted tool."""
         for i in range(self.retry_attempts):
             response = self.base_invoke(
                 messages=messages,
@@ -139,8 +141,7 @@ class llm_client_openai(llm_client_base):
                  retry_attempts=3,
                  model: str = "",
                  logger=None):
-        super().__init__(retry_attempts=retry_attempts, model=model, logger=logger)
-        self.use_developer = use_developer_instead_of_system
+        super().__init__(retry_attempts=retry_attempts, model=model, logger=logger, use_developer=use_developer_instead_of_system)
         self.openAI_client = openai
 
     @override
