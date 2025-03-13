@@ -1,11 +1,13 @@
 import enum
 import dataclasses
-from typing import Dict, List, Literal, Callable, Type
+from typing import Dict, List, Literal, Callable, Type, Tuple, Optional
 from pydantic import BaseModel, Field
 
 class logging_codes(enum.Enum):
     TOOL_MADE = 50
-    TOOL_USED = 51
+    DEV_MSG = 51
+    REVIEWER_MSG = 52
+    TOOL_USED = 53
 
     THINKING = 60
     ACTION_COMPLETE = 61
@@ -71,6 +73,7 @@ class InstructionResponse:
 #TODO Implement this
 class MakePythonToolToolParameters(BaseModel):
     description: str = Field(..., description="A description of the tool to be made.")
+    tool_name: str = Field(..., description="The name of the tool to be made.")
 
 # class UpdatePlanTool(LLMTool):
 #     def __init__(self):
@@ -92,5 +95,27 @@ class TaskCompleteTool(LLMTool):
             description="Report that the system has completed the user's task.",
             parameters=TaskCompleteToolParameters,
             requiredParameters=[],
+            type="function"
+        )
+
+class parameter(BaseModel):
+    name: str = Field(..., description="The name of the parameter.")
+    python_type: Literal['str', 'float', 'int', 'bool', 'List[str]', 'List[float]', 'List[int]', 'List[bool]'
+     ] = Field(..., description="The type of the parameter as str.")
+    description: str = Field(..., description="A description of what the parameter does.")
+    default: Optional[str] = Field(..., description="The default value of the parameter. If set this parameter is optional.")
+
+class MakeToolReviewerApproveToolParameters(BaseModel):
+    Tool_name: str = Field(..., description="The name of the tool that was made. This is also used as the filename so don't use spaces or special characters.")
+    description: str = Field(..., description="A description of what the tool does.")
+    parameters: List[parameter] = Field(..., description="The parameters that the tool takes.")
+
+class MakeToolReviewerApproveTool(LLMTool):
+    def __init__(self):
+        super().__init__(
+            name="approve_tool",
+            description="Call this is approve the code made by the developer and send it to the user.",
+            parameters=MakeToolReviewerApproveToolParameters,
+            requiredParameters=["Tool_name", "description", "parameters"],
             type="function"
         )

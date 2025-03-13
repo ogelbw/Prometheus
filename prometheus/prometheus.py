@@ -6,11 +6,13 @@ from prometheus.tools.definitions import *
 from prometheus.utils import *
 from prometheus.devTeam.toolCreator import Python_Tool_developer
 from prometheus.default_prompts import (
-    _makeToolPromptDefault,
+    _makeToolSummerizeHistoryPromptDefault,
     _makePlanPromptDefault,
     _updatePlanPromptDefault,
     _takeActionStepPromptDefault,
-    _taskStartPromptDefault
+    _taskStartPromptDefault,
+    _makeToolReviewerStartPromptDefault,
+    _makeToolDevStartPromptDefault,
 )
 
 
@@ -29,7 +31,10 @@ class Prometheus:
         make_plan_prompt: Callable = None,
         execution_prompt: Callable = None,
         task_start_prompt: Callable = None,
+        developer_start_prompt: Callable = None,
+        reviewer_start_prompt: Callable = None,
         step_retry_attempts: int = 5,
+        max_tool_make_iterations: int = 20,
         logger: Logger = None,
     ) -> None:
         self.logger = logger
@@ -40,9 +45,6 @@ class Prometheus:
         self._import_tools()
 
         # setting the default prompts
-        self.create_tool_prompt = (
-            make_tool_prompt if make_tool_prompt else _makeToolPromptDefault
-        )
         self.make_plan_prompt = (
             make_plan_prompt if make_plan_prompt else _makePlanPromptDefault
         )
@@ -57,18 +59,31 @@ class Prometheus:
             task_start_prompt if task_start_prompt else _taskStartPromptDefault
         )
 
+        self.make_tool_summerize_history_prompt = (
+            task_start_prompt if task_start_prompt else _makeToolSummerizeHistoryPromptDefault
+        )
+
+        self.developer_start_prompt = (
+            developer_start_prompt if developer_start_prompt else _makeToolDevStartPromptDefault
+        )
+        self.reviewer_start_prompt = (
+            reviewer_start_prompt if reviewer_start_prompt else _makeToolReviewerStartPromptDefault
+        )
+
+        self.max_tool_make_iterations = max_tool_make_iterations
+
         self._llmExecutorClient = llm_client_executer
         self._llmDevClient = llm_client_dev
         self._llmReviewerClient = llm_client_reviewer
         self.llm_interactions = llm_client_interactions(self)
-        self.pythonToolMaker = Python_Tool_developer(
+        self.pythonToolMaker: Python_Tool_developer = Python_Tool_developer(
             tools_path=tools_path,
             step_retry_attempts=step_retry_attempts,
             logger=self.log,
             llm_dev_client=self._llmDevClient,
             llm_reviewer_client=self._llmReviewerClient,
-            make_tool_prompt_template=self.create_tool_prompt,
-            review_tool_prompt_template=self.create_tool_prompt,  # TODO <-- Make a review tool prompt
+            developer_start_prompt = self.developer_start_prompt,
+            reviewer_start_prompt = self.reviewer_start_prompt,
             pip_tool=self.tools["pip"],
         )
 
@@ -131,21 +146,23 @@ class Prometheus:
             return "Tool call failed: " + str(e)
             
 
-    def CreatePythonTool(
-        self,
-        tool_name: str,
-        tool_description: str,
-        tool_parameters: List[LLMToolParameter],
-        tool_required_parameters: List[str],
-        developer_comment: str,
-    ):
+    def CreatePythonTool(self):
         """Creates a python tool in the tools directory."""
-        self.pythonToolMaker.MakeTool(
-            tool_name,
-            tool_description,
-            tool_parameters,
-            tool_required_parameters,
-            developer_comment,
+        # Get a summary of what tool should be made and why, then make a new 
+        # user message and pass it to the tool maker
+        summaryResponse = self._llmExecutorClient.base_invoke(
+            messages=self.executionHistory + self.make_tool_summerize_history_prompt(
+                use_developer= self._llmExecutorClient.use_developer
+            ),
+            stream=False,
+            use_tools=False
+        )
+
+        tool_name = self.pythonToolMaker.MakeTool(User_msg(
+            msg=summaryResponse.choices[0].message.content,
+            name='Client'
+        ),
+        iteration_max=self.max_tool_make_iterations
         )
 
         # add the tool to the list of tools
@@ -161,13 +178,13 @@ class Prometheus:
             self.executionHistory.append(User_msg(msg=goal, name='Jed'))
             self.executionHistory += self.make_plan_prompt(
                 name='System',
-                use_developer= self._llmExecutorClient.use_developer if type(self._llmExecutorClient) is llm_client_openai else False
+                use_developer= self._llmExecutorClient.use_developer
                 )
         else:
             # Assuming this is updating the plan as no goal is given
             self.executionHistory += self.update_plan_prompt(
                 name='System',
-                use_developer= self._llmExecutorClient.use_developer if type(self._llmExecutorClient) is llm_client_openai else False
+                use_developer= self._llmExecutorClient.use_developer
                 )
         
         response = self._llmExecutorClient.base_invoke(
@@ -175,7 +192,7 @@ class Prometheus:
             stream=False,
             use_tools=True,
             tools=self.tools,
-            reasoning_effort="high" if (self._llmExecutorClient.model.__contains__("o1") or self._llmExecutorClient.model.__contains__("o3-mini")) else None
+            reasoning_effort="high" if (self._llmExecutorClient.model.__contains__("o1") or self._llmExecutorClient.model.__contains__("o3")) else None
         )
 
         self.currentPlan = self.llm_interactions._getLLMResponseMessage(response).content
@@ -247,7 +264,7 @@ class Prometheus:
 
         if self.executionHistory.__len__() == 0:
             self.executionHistory.append(self.task_start_prompt(
-                use_developer= (self._llmExecutorClient.use_developer if type(self._llmExecutorClient) is llm_client_openai else False) # this only makes sense for o1 o3-mini models
+                use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
             ))
         
         if user_task is not None:
@@ -263,7 +280,7 @@ class Prometheus:
                     name='Prometheus'
                 )] +
                 self.task_start_prompt(
-                    use_developer= (self._llmExecutorClient.use_developer if type(self._llmExecutorClient) is llm_client_openai else False) # this only makes sense for o1 o3-mini models
+                    use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
                 ),
             stream=False,
             use_tools=True,
@@ -281,13 +298,14 @@ class Prometheus:
                     level=logging_codes.ACTION_COMPLETE.value)
 
         # make the tool calls and add the responses to the execution history
-        for toolCall in stepResponse.choices[0].message.tool_calls:
-            args = self.llm_interactions._getLLMToolCall(toolCall)
-            toolResponse = self._callTool(args[0], args[1])
-            self.executionHistory.append(Tool_response(
-                call_id=toolCall.id,
-                content=toolResponse
-            ))
+        if stepResponse.choices[0].message.tool_calls:
+            for toolCall in stepResponse.choices[0].message.tool_calls:
+                args = self.llm_interactions._getLLMToolCall(toolCall)
+                toolResponse = self._callTool(args[0], args[1])
+                self.executionHistory.append(Tool_response(
+                    call_id=toolCall.id,
+                    content=toolResponse
+                ))
 
     def generate_summary(self):
         """Generate a summary of the system's actions."""
