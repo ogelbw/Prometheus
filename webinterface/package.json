@@ -1,14 +1,22 @@
 {
   "dependencies": {
-    "mineflayer": "^4.25.0"
+    "express": "^4.21.2",
+    "mineflayer": "^4.25.0",
+    "mineflayer-pathfinder": "^2.4.5"
   },
   "name": "webinterface",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "devDependencies": {},
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "npx ts-node minecraft_interface.ts"
   },
   "keywords": [],
   "author": "",
