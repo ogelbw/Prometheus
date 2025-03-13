@@ -36,6 +36,7 @@ class Prometheus:
         step_retry_attempts: int = 5,
         max_tool_make_iterations: int = 20,
         logger: Logger = None,
+        external_context_provider: Callable[[], [Dict[str,str]]] | None = None
     ) -> None:
         self.logger = logger
 
@@ -102,6 +103,8 @@ class Prometheus:
         self.running_task = True
         """ A flag to indicate if the system is currently running a task."""
 
+        self.external_context: Callable[[], [Dict[str,str]]] = external_context_provider
+
     def log(self, message: str, level: int = INFO):
         """Logs a message to the logger."""
         if self.logger:
@@ -133,7 +136,7 @@ class Prometheus:
             self.tools[tool_name] = tools[tool_name].ToolDescription()
             self.tools[tool_name].function = tools[tool_name].Run
             self.log(f"Tool {tool_name} imported successfully.")
-        
+
         # Now add the special tools
         self.tools["task_complete"] = TaskCompleteTool()
         self.tools["task_complete"].function = self._taskComplete
@@ -144,11 +147,10 @@ class Prometheus:
             return str(self.tools[tool_name].function(**tool_args)) or "Tool Called without error."
         except Exception as e:
             return "Tool call failed: " + str(e)
-            
 
     def CreatePythonTool(self):
         """Creates a python tool in the tools directory."""
-        # Get a summary of what tool should be made and why, then make a new 
+        # Get a summary of what tool should be made and why, then make a new
         # user message and pass it to the tool maker
         summaryResponse = self._llmExecutorClient.base_invoke(
             messages=self.executionHistory + self.make_tool_summerize_history_prompt(
@@ -186,7 +188,7 @@ class Prometheus:
                 name='System',
                 use_developer= self._llmExecutorClient.use_developer
                 )
-        
+
         response = self._llmExecutorClient.base_invoke(
             messages=self.executionHistory,
             stream=False,
@@ -215,63 +217,22 @@ class Prometheus:
         """Have the LLM take a step through it's plan, if a task is provided
         A new plan will be made and added to the execution history."""
 
-        # Note anything within "Quotes" is just seen as data byt the LLM, it will 
+        # Note anything within "Quotes" is just seen as data byt the LLM, it will
         # be untrusted data. Tool responses should probable be wrapped in this.
-
-        # 1. tell the LLM to follow it's plan by using one of it's tools
-        # 2. Put the return of the tool into the execution history
-        # 3. Tell the LLM to think about the result of the tool and update it's
-        # plan if needed.
-        # 4. Repeat until the LLM calls the finish/task_complete tool.
-
-        # "You are an AI assistant that is about to be given a task by a user. 
-        # You are to carry out the task by calling various tools that allow you
-        # to interact with the computer you are running on in order for you to
-        # carry out the user's task.
-        # 
-        # You also have access to 2 special tools: make_tool and task_complete.
-        # 
-        # # Call update_plan to make updates to your plan that is pinned as the 
-        # # most recent message in the chat.
-        # 
-        # Call make_tool to create a new python tool for you to extend your 
-        # capabilities, allowing you to do things you previously couldn't in
-        # order to carry out the user's task.
-        #
-        # Finally call task_complete to report that you have completed the
-        # user's task. You will provide a summary of what you have done to the
-        # user at this point.
-        #
-        # Apart from the user proving you with a task you will not be 
-        # interacting with them, this chat is for you to call tools, plan and 
-        # reason about the result of tool calls in order for you to update your 
-        # approach to the task.
-        # "
-
-        # User msg (named)
-
-        # if execuiton history len() <= 2 then have the llm make a plan 
-        # " Make a plan step by step for how you are going to achieve the user's 
-        # task. You should mention the tools you are going to call, what you are 
-        # going to do with the result of that call (if anything) and the reason for doing it.
-        #  You should also mention what you are going to do if the tool call fails for each step of the plan."
-        # This prompt should either be a user or dev prompt and should be removed after the LLM responds.
-
-        # then loop: try with and without prompting the ai to take the next step, it might just be able to do it.
-        # "Carry out the next step in your plan or make changes to your plan if needed. Call task_complete when you have completed the user's task or if the user's task is impossible."
-
-        # We need to split the tool response across multiple messages if it is too long
 
         if self.executionHistory.__len__() == 0:
             self.executionHistory.append(self.task_start_prompt(
                 use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
             ))
-        
+
         if user_task is not None:
             # Tell the LLM to plan for the user's task
             self._makePlan(user_task)
 
-        # TODO try this with both a dev message and a user message.
+        # Inject the external context if the function is provided at init
+        if self.external_context is not None:
+            self.executionHistory.append(self.external_context())
+
         # Get the LLM to take a step
         stepResponse = self._llmExecutorClient.base_invoke(
             messages=self.executionHistory +
@@ -279,7 +240,7 @@ class Prometheus:
                     msg=self.currentPlan,
                     name='Prometheus'
                 )] +
-                self.task_start_prompt(
+                self.take_step_prompt(
                     use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
                 ),
             stream=False,
@@ -310,16 +271,12 @@ class Prometheus:
     def generate_summary(self):
         """Generate a summary of the system's actions."""
 
-        messages = filter_system_messages(self.executionHistory) + [
-            {
-                "role": "system",
-                "content": f"You are an AI responsible for generating a summary of the system's actions.",
-            },
-            {
-                "role": "system",
-                "content": f"Generate a summary of the system's actions to who informed the system to: {self.goal}.",
-            },
-        ]
+        messages = filter_system_messages(self.executionHistory) + System_msg(
+            msg=f"""You are an AI responsible for generating a summary of the system's actions.
+
+Generate a summary of the system's actions to who informed the system to: {self.goal}.""",
+            use_developer=self._llmExecutorClient.use_developer,
+        )
 
         return self.llm_interactions._getLLMResponseMessage(
             self._llmExecutorClient.base_invoke(
