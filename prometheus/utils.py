@@ -9,10 +9,6 @@ from logging import Logger
 from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 
-# TODO Replace all of the schema related thing with thhe pydantic equiverlent
-# and use pydantic_function_tool to convert it to a json string schhema for the openai api
-#  thhis is for consistancy and to make it easier to work with the tools
-
 def filter_system_messages(messages: List[dict]):
     """Filters out the system messages from the messages."""
     return [x for x in messages if (x["role"] != "system" and x["role"] != "developer")]
@@ -38,7 +34,8 @@ class llm_client_interactions:
         """Formats the tools dictionary into a list of tools that can be passed to
         the OpenAI API."""
         tmp = []
-
+        if tools is None:
+            return tmp
         for key, tool in tools.items():
             tmp.append(
                 {
@@ -190,7 +187,8 @@ class llm_client_openai(llm_client_base):
                         if forced_tool
                         else None
                     ),
-                    reasoning_effort=re
+                    reasoning_effort=re,
+                    parallel_tool_calls=True if use_tools else openai._types.NotGiven()
                 )
             else:
                 llm_response = self.openAI_client.chat.completions.create(
@@ -207,6 +205,7 @@ class llm_client_openai(llm_client_base):
                         if forced_tool
                         else None
                     ),
+                    parallel_tool_calls=True if use_tools else openai._types.NotGiven()
                 )
 
         except openai.RateLimitError as e:
