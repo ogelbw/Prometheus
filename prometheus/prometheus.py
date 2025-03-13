@@ -165,6 +165,9 @@ class Prometheus:
         iteration_max=self.max_tool_make_iterations
         )
 
+        # this will parse all tools and find the required modules (In theory)
+        self.pythonToolMaker.install_required_modules()
+
         # add the tool to the list of tools
         module = self._import_tool(self.tools_path, tool_name)
         self.tools[tool_name] = module.ToolDescription()
