@@ -30,41 +30,54 @@ Apart from the user proving you with a task you will not be interacting with the
         )
     ]
 
-def _makeToolPromptDefault(
-    tool_name: str,
-    tool_description: str,
-    tool_parameters: List[LLMToolParameter],
-    tool_required_parameters: List[str],
-    comment: str,
-):
-    """Default prompt to create a tool."""
+def _makeToolSummerizeHistoryPromptDefault(use_developer: bool = False):
     return [
-        {
-            "role": "system",
-            "content": f"You are an experienced python AI programmer who has been tasked with creating a python script called {tool_name} with the description: {tool_description}, for part of a larger system.",
-        },
-        {
-            "role": "system",
-            "content": f"The tool must have the following parameters: {', '.join([f'{x.name} ({x.type}) : {x.description}' for x in tool_parameters])}.",
-        },
-        {
-            "role": "system",
-            "content": f"The following are required parameters: {', '.join(tool_required_parameters)}. The rest are optional.",
-        },
-        {"role": "system", "content": f"Create a single python script. "},
-        {
-            "role": "system",
-            "content": f"The script must have a global function called 'Run' so it can be called by the system. 'Run' must call the function you make and it must return a string (even if it is empty). This is because stdout is ignored by the system.",
-        },
-        {
-            "role": "system",
-            "content": f"The python script must be runnable on linux and windows systems, it should detect which system it is on and act accordingly.",
-        },
-        {
-            "role": "system",
-            "content": f"Additionally this comment to the developer was left: {comment}",
-        },
+        System_msg(
+            msg="""Tool creation has been triggered. You must now stop carrying out the user's task and create a summary of what you where trying to do, why you are unable to do it and provide a description of a python tool that will allow you to do it.
+
+This summary will be passed to a development team that will make a tool for you to use. Please state any specific requirements and parameters that the tool should have.""",
+            use_developer = use_developer,
+            name='System'
+        )
     ]
+
+def _makeToolDevStartPromptDefault(use_developer: bool = False):
+    """Default prompt for the tool creation task that is given to the developer."""
+    return [
+        System_msg(
+            name="System",
+            use_developer=use_developer,
+            msg="""You are an experienced python programmer with 15 years of experience. You are about to be given a message by a user with a summary of a tool they would like you to make.
+
+You are to make the tool in python being mindful of the requirements and parameters that the user has given you as well as best practices in python programming. The code you write should be production ready and not have any placeholders at all.
+The tool you make MUST include a function 'Run' that will be called by the user when they want to use the tool.
+
+Also, The code generated should be cross platform between windows and linux.
+
+You will have no interaction with the user from this point on, however you will be having a converstion with a reviewer that will be looking over your code and providing feedback on it. You will be able to ask the reviewer questions about the task and the code you are writing as well as brain storm ideas with them.
+
+You must provide the entire python script in a single code block, you can only have one code block per message along with any thinking or comments.
+"""
+        )
+    ]
+System_msg.__
+def _makeToolReviewerStartPromptDefault(use_developer: bool = False):
+    """You are an experienced python programmer that is acting as a code reviwer. A developer is about to start make a python tool based on a specification from a user.
+
+Your job is to assist the developer in making this tool by providing feedback on the code they write. You should be looking for any issues with the code that the developer writes and provide feedback. You should also be looking for any issues with the tool specification that the user may have overlooked.
+Furthermore the developer may ask you questions about the code or brainstorm ideas with you. You should be ready to provide feedback on these as well.
+Also, The code generated should be cross platform between windows and linux.
+
+Once you and the developer have refined the code to a production ready standard you should call 'approve_tool'. As a general rule of thumb, you and the developer should exchange a minimum of 3 messages before calling 'approve_tool'.
+"""
+    return [
+        System_msg(
+            name="System",
+            use_developer=use_developer,
+            msg=""""""
+        )
+    ]
+
 
 
 def _makePlanPromptDefault(name:str|None = None, use_developer:bool = False):
