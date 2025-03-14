@@ -26,7 +26,7 @@ class Prometheus:
         llm_client_dev: llm_client_base,
         llm_client_reviewer: llm_client_base,
         tools_path: str = "./tools",  # Path to the tools directory
-        make_tool_prompt: Callable = None,
+        make_tool_summary_prompt: Callable = None,
         make_plan_prompt: Callable = None,
         execution_prompt: Callable = None,
         task_start_prompt: Callable = None,
@@ -34,14 +34,21 @@ class Prometheus:
         reviewer_start_prompt: Callable = None,
         step_retry_attempts: int = 5,
         max_tool_make_iterations: int = 20,
+        min_tool_make_iterations: int = 4,
         logger: Logger = None,
-        external_context_provider: Callable[[], [Dict[str,str]]] | None = None
+        external_context_provider: Callable[[], [Dict[str,str]]] | None = None,
+        extra_tools: List[LLMTool] = [],
+        allow_tool_creation: bool = True
     ) -> None:
         self.logger = logger
+
+        self.allow_tool_creation = allow_tool_creation
 
         # import all the external tools
         self.tools_path = tools_path
         self.tools = {}
+        for tool in extra_tools:
+            self.tools[tool.name] = tool
         self._import_tools()
 
         # setting the default prompts
@@ -57,7 +64,7 @@ class Prometheus:
         )
 
         self.make_tool_summerize_history_prompt = (
-            task_start_prompt if task_start_prompt else _makeToolSummerizeHistoryPromptDefault
+            make_tool_summary_prompt if make_tool_summary_prompt else _makeToolSummerizeHistoryPromptDefault
         )
 
         self.developer_start_prompt = (
@@ -68,6 +75,7 @@ class Prometheus:
         )
 
         self.max_tool_make_iterations = max_tool_make_iterations
+        self.min_tool_make_iterations = min_tool_make_iterations
 
         self._llmExecutorClient = llm_client_executer
         self._llmDevClient = llm_client_dev
@@ -140,8 +148,9 @@ class Prometheus:
         self.tools["update_plan"] = updatePlan()
         self.tools["update_plan"].function = self._setPlan
 
-        self.tools["make_tool"] = MakePythonToolTool()
-        self.tools["make_tool"].function = self.CreatePythonTool
+        if self.allow_tool_creation:
+            self.tools["make_tool"] = MakePythonToolTool()
+            self.tools["make_tool"].function = self.CreatePythonTool
 
     def _callTool(self, tool_name: str, tool_args: Dict[str, Any]):
         """Calls a tool with the given name and arguments."""
@@ -167,7 +176,8 @@ class Prometheus:
             msg=summaryResponse.choices[0].message.content,
             name='Client'
         ),
-        iteration_max=self.max_tool_make_iterations
+        iteration_max=self.max_tool_make_iterations,
+        intertion_min=self.min_tool_make_iterations
         )
 
         # this will parse all tools and find the required modules (In theory)
@@ -184,7 +194,7 @@ class Prometheus:
         self.currentPlan = plan
         return f"Plan has been updated."
 
-    def _makePlan(self, goal: str):
+    def MakePlan(self, goal: str):
         """Make a step by step plan for the system to follow. If the goal parameter is empty then it just prompts from execution history"""
 
         self.executionHistory.append(User_msg(msg=goal, name='Jed'))
@@ -217,8 +227,9 @@ class Prometheus:
                     content=toolResponse
                 ))
         self.log(f"Plan created successfully: \n{self.currentPlan}\n", level=logging_codes.PLAN_MADE.value)
+        return self.currentPlan
 
-    def _executeStep(self, user_task: str|None = None):
+    def ExecuteStep(self, user_task: str|None = None):
         """Have the LLM take a step through it's plan, if a task is provided
         A new plan will be made and added to the execution history."""
 
@@ -232,7 +243,7 @@ class Prometheus:
 
         if user_task is not None:
             # Tell the LLM to plan for the user's task
-            self._makePlan(user_task)
+            self.MakePlan(user_task)
 
         # Inject the external context if the function is provided at init
         context_msg = []
@@ -307,20 +318,25 @@ Generate a summary of the system's actions to who informed the system to: {self.
         """To be called by the LLM when the task is complete."""
         self.running_task = False
 
+    def clear_history(self):
+        """Clear the history of the system."""
+        self.executionHistory = []
+
     def Task(self, goal: str):
         """Perform a task given by the user."""
         self.goal = goal
         self.running_task = True
 
         # make a plan to achieve the goal
-        self._makePlan(goal)
+        self.MakePlan(goal)
 
         # execute the plan
         while self.running_task:
-            self._executeStep()
+            self.ExecuteStep()
         else:
             summary = self.generate_summary()
             self.log("Task complete.", level=logging_codes.TASK_COMPLETE.value)
             self.log("\n" + summary, level=logging_codes.TASK_COMPLETE.value)
 
+            self.clear_history()
             return summary

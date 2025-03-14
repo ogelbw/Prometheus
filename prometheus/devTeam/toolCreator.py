@@ -64,7 +64,8 @@ class Python_Tool_developer:
     def MakeTool(
         self,
         tool_summary_msg: Dict[str, str],
-        iteration_max: int = 20
+        iteration_max: int = 20,
+        intertion_min: int = 4
     ):
         """Creates a python tool in the tools directory. returns the tool name."""
         self.log("Tool creation starting", logging_codes.TOOL_CREATION.value)
@@ -89,7 +90,7 @@ class Python_Tool_developer:
             response = self.llm_dev_client.base_invoke(
                 stream=False,
                 messages= (developer_start_prompt + msg_history_dev) if developer_speaking else (reviewer_start_prompt + msg_history_reviewer),
-                use_tools=(i > 4),
+                use_tools=(i > intertion_min),
                 tools=self.dev_tools if developer_speaking else self.reviwer_tools,
             )
 
