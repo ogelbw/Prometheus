@@ -45,7 +45,7 @@ class Python_Tool_developer:
             ["pipreqs", "--print", '.'],
             capture_output=True,
             text=True,
-            check=True
+            check=False
         )
 
         # match "package==version"
@@ -55,7 +55,7 @@ class Python_Tool_developer:
         ]
 
         # install the packages
-        subprocess.run(["pip", "install", *packages], check=True)
+        subprocess.run(["pip", "install", *packages], check=False)
 
     # This method creates a new python tool for use by the system.
     # it will repeatedly create a python script, have the script reviewed by a LLM model where
@@ -173,7 +173,7 @@ class Python_Tool_developer:
         required_parameters = [parameter['name'] for parameter in parameters if parameter['default'] is not None]
 
         # Constructing the python code
-        pythonCode = f"""if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter \nfrom pydantic import BaseModel, Field
+        pythonCode = f"""if __name__ != "__main__": from prometheus.tools.definitions import LLMTool \nfrom pydantic import BaseModel, Field\nfrom typing import Optional
 
 {largest_chunk}
 

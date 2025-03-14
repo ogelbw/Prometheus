@@ -34,7 +34,7 @@ class Prometheus:
         reviewer_start_prompt: Callable = None,
         step_retry_attempts: int = 5,
         max_tool_make_iterations: int = 20,
-        min_tool_make_iterations: int = 4,
+        min_tool_make_iterations: int = 2,
         logger: Logger = None,
         external_context_provider: Callable[[], [Dict[str,str]]] | None = None,
         extra_tools: List[LLMTool] = [],
@@ -172,6 +172,8 @@ class Prometheus:
             use_tools=False
         )
 
+        self.log(f'Execution history summerized: {summaryResponse.choices[0].message.content}', level=logging_codes.TOOL_CREATION.value)
+
         tool_name = self.pythonToolMaker.MakeTool(User_msg(
             msg=summaryResponse.choices[0].message.content,
             name='Client'
@@ -188,16 +190,17 @@ class Prometheus:
         self.tools[tool_name] = module.ToolDescription()
         self.tools[tool_name].function = module.Run
         self.log(f"Tool {tool_name} created successfully.")
+        return f"Tool {tool_name} created successfully."
 
     def _setPlan(self, plan: str):
         """Sets the current plan to the given plan."""
         self.currentPlan = plan
         return f"Plan has been updated."
 
-    def MakePlan(self, goal: str):
+    def MakePlan(self, new_plan: str):
         """Make a step by step plan for the system to follow. If the goal parameter is empty then it just prompts from execution history"""
 
-        self.executionHistory.append(User_msg(msg=goal, name='Jed'))
+        self.executionHistory.append(User_msg(msg=new_plan, name='Jed'))
         self.executionHistory += self.make_plan_prompt(
             name='System',
             use_developer= self._llmExecutorClient.use_developer
@@ -216,16 +219,16 @@ class Prometheus:
         self.executionHistory.append(Assistant_msg(
             msg=self.currentPlan,
             name='Prometheus',
-            tool_calls= response.choices[0].message.tool_calls
+            # tool_calls= response.choices[0].message.tool_calls
         ))
-        if response.choices[0].message.tool_calls:
-            for tool in response.choices[0].message.tool_calls:
-                args = self.llm_interactions._getLLMToolCall(tool)
-                toolResponse = self._callTool(args[0], args[1])
-                self.executionHistory.append(Tool_response(
-                    call_id=tool.id,
-                    content=toolResponse
-                ))
+        # if response.choices[0].message.tool_calls:
+        #     for tool in response.choices[0].message.tool_calls:
+        #         args = self.llm_interactions._getLLMToolCall(tool)
+        #         toolResponse = self._callTool(args[0], args[1])
+        #         self.executionHistory.append(Tool_response(
+        #             call_id=tool.id,
+        #             content=toolResponse
+        #         ))
         self.log(f"Plan created successfully: \n{self.currentPlan}\n", level=logging_codes.PLAN_MADE.value)
         return self.currentPlan
 
@@ -246,7 +249,7 @@ class Prometheus:
             self.MakePlan(user_task)
 
         # Inject the external context if the function is provided at init
-        context_msg = []
+        context_msg = None
         if self.external_context is not None:
             context_msg = self.external_context()
             if type(context_msg) is list:
@@ -261,7 +264,12 @@ class Prometheus:
         prompt = self.executionHistory + [System_msg(
                     msg=self.currentPlan,
                     name='Prometheus'
-                )] + context_msg + self.take_step_prompt(
+                )]
+        
+        # if context_msg is not None:
+        #     prompt += context_msg
+
+        prompt += self.take_step_prompt(
                     use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
                 )
 
@@ -274,27 +282,32 @@ class Prometheus:
             # reasoning_effort="high" if (self._llmExecutorClient.model.__contains__("o1") or self._llmExecutorClient.model.__contains__("o3-mini")) else None
         )
 
-        if context_msg is not None:
-            self.executionHistory += context_msg
+        # if context_msg is not None:
+        #     self.executionHistory += context_msg
 
-        self.executionHistory.append(Assistant_msg(
-            msg= stepResponse.choices[0].message.content,
-            name='Prometheus',
-            tool_calls= stepResponse.choices[0].message.tool_calls
-        ))
         if stepResponse.choices[0].message.content is not None:
             self.log(f"{stepResponse.choices[0].message.content}",
                     level=logging_codes.ACTION_COMPLETE.value)
 
         # make the tool calls and add the responses to the execution history
+        tool_response_to_add = []
         if stepResponse.choices[0].message.tool_calls:
             for toolCall in stepResponse.choices[0].message.tool_calls:
                 args = self.llm_interactions._getLLMToolCall(toolCall)
                 toolResponse = self._callTool(args[0], args[1])
-                self.executionHistory.append(Tool_response(
+                tool_response_to_add.append(Tool_response(
                     call_id=toolCall.id,
                     content=toolResponse
                 ))
+        
+        # append the assistant message and the tool responses to the execution history
+        self.executionHistory.append(Assistant_msg(
+            msg= stepResponse.choices[0].message.content,
+            name='Prometheus',
+            tool_calls= stepResponse.choices[0].message.tool_calls
+        ))
+        for tool_response in tool_response_to_add:
+            self.executionHistory.append(tool_response)
 
     def generate_summary(self):
         """Generate a summary of the system's actions."""
@@ -334,7 +347,7 @@ Generate a summary of the system's actions to who informed the system to: {self.
         while self.running_task:
             self.ExecuteStep()
         else:
-            summary = self.generate_summary()
+            summary = self.generate_summary().content
             self.log("Task complete.", level=logging_codes.TASK_COMPLETE.value)
             self.log("\n" + summary, level=logging_codes.TASK_COMPLETE.value)
 
