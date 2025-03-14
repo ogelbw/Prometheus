@@ -4,7 +4,7 @@ from typing import List
 
 from pydantic import BaseModel
 
-if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter
+if __name__ != "__main__": from prometheus.tools.definitions import LLMTool
 
 def install_package(package_names):
     """Installs a package in the currently active Python environment."""

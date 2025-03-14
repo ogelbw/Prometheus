@@ -140,8 +140,12 @@ class Prometheus:
         self.tools["update_plan"] = updatePlan()
         self.tools["update_plan"].function = self._setPlan
 
+        self.tools["make_tool"] = MakePythonToolTool()
+        self.tools["make_tool"].function = self.CreatePythonTool
+
     def _callTool(self, tool_name: str, tool_args: Dict[str, Any]):
         """Calls a tool with the given name and arguments."""
+        self.log(f"Calling tool {tool_name}.", level=logging_codes.TOOL_USED.value)
         try:
             return str(self.tools[tool_name].function(**tool_args)) or "Tool Called without error."
         except Exception as e:

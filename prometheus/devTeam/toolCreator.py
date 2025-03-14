@@ -67,6 +67,8 @@ class Python_Tool_developer:
         iteration_max: int = 20
     ):
         """Creates a python tool in the tools directory. returns the tool name."""
+        self.log("Tool creation starting", logging_codes.TOOL_CREATION.value)
+
         running = True
         args = None
 

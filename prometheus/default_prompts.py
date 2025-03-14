@@ -1,12 +1,4 @@
-from typing import List
-
-from prometheus.tools.definitions import (
-    InstructionResponse,
-    LLMToolParameter,
-    instruction,
-)
-
-from prometheus.tools.definitions import System_msg, User_msg, Tool_response, Assistant_msg
+from prometheus.tools.definitions import System_msg
 
 def _taskStartPromptDefault(use_developer: bool = False):
     return [
@@ -94,6 +86,6 @@ def _takeActionStepPromptDefault(
     return [
         System_msg(
             use_developer=use_developer,
-            msg="""Carry out the next step in your plan or make changes to your plan by calling the update_plan tool if needed. Call task_complete when you have completed the user's task or if the user's task is impossible."""
+            msg="""Carry out the next step in your plan or make changes to your plan by calling the update_plan tool if needed. If you need to create a new python tool you can call the make_tool tool. Call task_complete when you have completed the user's task or if the user's task is impossible."""
         )
     ]

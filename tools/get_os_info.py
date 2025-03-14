@@ -9,7 +9,7 @@ from pydantic import BaseModel  # For additional system information; requires th
 if __name__ != "__main__":
     # when called directly this import doesn't work. The tool description 
     # cannot be testing in this state
-    from prometheus.tools.definitions import LLMTool, LLMToolParameter
+    from prometheus.tools.definitions import LLMTool
 
 def Run():
     # OS information

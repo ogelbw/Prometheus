@@ -1,4 +1,4 @@
-if __name__ != "__main__": from prometheus.tools.definitions import LLMTool, LLMToolParameter 
+if __name__ != "__main__": from prometheus.tools.definitions import LLMTool 
 from typing import List
 from pydantic import BaseModel, Field
 

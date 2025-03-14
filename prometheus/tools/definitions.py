@@ -8,6 +8,7 @@ class logging_codes(enum.Enum):
     DEV_MSG = 51
     REVIEWER_MSG = 52
     TOOL_USED = 53
+    TOOL_CREATION = 54
 
     THINKING = 60
     ACTION_COMPLETE = 61
@@ -17,7 +18,6 @@ class logging_codes(enum.Enum):
     PLAN_FAILED = 71
 
     TASK_COMPLETE = 80
-
 
 # Messages supported by the openai API
 def System_msg(msg: str, name: str = None, use_developer: bool = False):
@@ -41,13 +41,6 @@ def User_msg(msg: str, name: str = None):
     return apiMsg
 
 @dataclasses.dataclass
-class LLMToolParameter:
-    """ The parameters for generating a tool, not to be used in the description of a tool."""
-    name: str
-    type: Literal["str", "list", "int", "float", "boolean", "object"]
-    description: str
-
-@dataclasses.dataclass
 class LLMTool:
     """ A tool that can be used by the LLM."""
     name: str
@@ -57,23 +50,22 @@ class LLMTool:
     type: Literal["function", "data"]
     function: Callable|None = None
 
-@dataclasses.dataclass
-class instruction:
-    """ An intruction given from one part of the system to another."""
-    action: str
-    reason: str
-
-@dataclasses.dataclass
-class InstructionResponse:
-    """ A response to an instruction."""
-    action: str
-    response: str
-
 # --- Special LLM tool calls ---
-#TODO Implement this
 class MakePythonToolToolParameters(BaseModel):
-    description: str = Field(..., description="A description of the tool to be made.")
-    tool_name: str = Field(..., description="The name of the tool to be made.")
+    # description: str = Field(..., description="A description of the tool to be made.")
+    # tool_name: str = Field(..., description="The name of the tool to be made.")
+    pass
+
+class MakePythonToolTool(LLMTool):
+    def __init__(self):
+        super().__init__(
+            name="make_tool",
+            description="Create a new python tool for the LLM to use.",
+            parameters=MakePythonToolToolParameters,
+            # requiredParameters=["description", "tool_name"],
+            requiredParameters=[],
+            type="function"
+        )
 
 class TaskCompleteToolParameters(BaseModel):
     pass
