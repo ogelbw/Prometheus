@@ -8,7 +8,6 @@ from prometheus.devTeam.toolCreator import Python_Tool_developer
 from prometheus.default_prompts import (
     _makeToolSummerizeHistoryPromptDefault,
     _makePlanPromptDefault,
-    _updatePlanPromptDefault,
     _takeActionStepPromptDefault,
     _taskStartPromptDefault,
     _makeToolReviewerStartPromptDefault,
@@ -47,9 +46,6 @@ class Prometheus:
         # setting the default prompts
         self.make_plan_prompt = (
             make_plan_prompt if make_plan_prompt else _makePlanPromptDefault
-        )
-        self.update_plan_prompt = (
-            make_plan_prompt if make_plan_prompt else _updatePlanPromptDefault
         )
         self.take_step_prompt = (
             execution_prompt if execution_prompt else _takeActionStepPromptDefault
