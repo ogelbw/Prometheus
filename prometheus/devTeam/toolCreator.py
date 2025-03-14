@@ -1,11 +1,11 @@
 import re
+import subprocess
 from prometheus.tools.definitions import LLMTool, MakeToolReviewerApproveTool, logging_codes
-from typing import List, Dict, Callable, Tuple
+from typing import Dict, Callable
 from os import path
 from logging import Logger
-from prometheus.utils import llm_client_base, llm_client_interactions, llm_client_openai
-from prometheus.tools.definitions import LLMTool, Tool_response, User_msg, System_msg, Assistant_msg
-from copy import deepcopy
+from prometheus.utils import llm_client_base, llm_client_interactions
+from prometheus.tools.definitions import LLMTool, Tool_response, User_msg, Assistant_msg
 
 
 class Python_Tool_developer:
@@ -36,58 +36,26 @@ class Python_Tool_developer:
 
         self.dev_tools = {}
 
-    def install_required_modules(self, tool_name, pythonCode):
-        """ " From the python code this Identifies the required python modules and installs them."""
-        for i in range(self.step_retry_attempts):
-            # get the tool to install all the needed packages
-            installPackageReponse = self.llm_dev_client.base_invoke(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"You are an AI responsible for installing packages in the system.",
-                    },
-                    {
-                        "role": "system",
-                        "content": f"Install all the needed packages via the pip tool for the following python code: \n{pythonCode}",
-                    },
-                    {
-                        "role": "system",
-                        "content": f"Note the name for the python packages may differ from the import names, make sure to install the correct packages.",
-                    }
-                ],
-                stream=False,
-                use_tools=True,
-                tools= {"pip": self.pip_tool},
-                forced_tool="pip",
-            )
+    def install_required_modules(self):
+        """ From the python code this Identifies the required python modules and installs them."""
+        # Note: since this is uses pipreqs it will find the dependencies of all
+        # tools each time it is ran. I don't think there is a way to run it
+        # per script.
+        result = subprocess.run(
+            ["pipreqs", "--print", '.'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
 
-            # see if the LLM tried to make use the pip tool
-            try:
-                packages: Dict[str, List[str]] = self.llm_interactions._getLLMToolCall(
-                    self.llm_interactions._getLLMResponseTools(installPackageReponse)[0]
-                )[1]
-                idsToDel = []
-                for package in packages["package_names"]:
-                    if "prometheus" in package:
-                        idsToDel.append(package)
-                for id in idsToDel:
-                    packages["package_names"].remove(id)
+        # match "package==version"
+        package_pattern = re.compile(r"^([\w\-]+)==[\d\.]+$")
+        packages = [
+            match.group(1) for line in result.stdout.splitlines() if (match := package_pattern.match(line))
+        ]
 
-                # install the packages
-                self.pip_tool.function(packages["package_names"])
-                break
-            except Exception as e:
-                print(e)
-                self.log(
-                    f"Failed to install packages for tool: {tool_name}.",
-                    level=self.ACTION_FAILED,
-                )
-                if i < self.step_retry_attempts - 1:
-                    self.log(f"Trying again...", level=self.ACTION_FAILED)
-                else:
-                    raise RuntimeError(
-                        f"Failed to install packages for tool: {tool_name}. No more attempts."
-                    )
+        # install the packages
+        subprocess.run(["pip", "install", *packages], check=True)
 
     # This method creates a new python tool for use by the system.
     # it will repeatedly create a python script, have the script reviewed by a LLM model where
@@ -220,11 +188,10 @@ def ToolDescription():
         type="function"
     )
 """
+        # python-code-end
 
         # Writing the python file to the tools directory
         with open(path.join(self.tools_path, f"{Tool_name}.py"), "w") as f:
             f.write(pythonCode)
-
-        # self.install_required_modules(tool_name, pythonCode)
         return Tool_name
 # End of MakeTool

@@ -1,7 +1,7 @@
 from typing import List, Any, Dict, override, Literal
 
 import openai
-from prometheus.tools.definitions import LLMTool, System_msg
+from prometheus.tools.definitions import LLMTool, System_msg, User_msg
 from openai import OpenAI
 import json
 import enum
@@ -10,8 +10,15 @@ from openai.types.chat.chat_completion import ChatCompletion
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 
 def filter_system_messages(messages: List[dict]):
-    """Filters out the system messages from the messages."""
-    return [x for x in messages if (x["role"] != "system" and x["role"] != "developer")]
+    """Converts all system messages to users messages."""
+    tmp = []
+    # return [x for x in messages if (x["role"] != "system" and x["role"] != "developer")]
+    for msg in messages:
+        if msg["role"] == "system" or msg["role"] == "developer":
+            tmp.append(User_msg(msg["content"], "systemprompt"))
+        else:
+            tmp.append(msg)
+    return tmp
 
 class llm_client_interactions:
     def __init__(self, step_retry_attempts: int = 3):
