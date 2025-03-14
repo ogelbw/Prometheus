@@ -231,7 +231,7 @@ class Prometheus:
             self._makePlan(user_task)
 
         # Inject the external context if the function is provided at init
-        context_msg = None
+        context_msg = []
         if self.external_context is not None:
             context_msg = self.external_context()
             if type(context_msg) is list:
