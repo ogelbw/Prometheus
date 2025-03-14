@@ -319,5 +319,8 @@ Generate a summary of the system's actions to who informed the system to: {self.
         while self.running_task:
             self._executeStep()
         else:
+            summary = self.generate_summary()
             self.log("Task complete.", level=logging_codes.TASK_COMPLETE.value)
-            self.log("\n" + self.generate_summary().content, level=logging_codes.TASK_COMPLETE.value)
+            self.log("\n" + summary, level=logging_codes.TASK_COMPLETE.value)
+
+            return summary
