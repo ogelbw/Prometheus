@@ -271,12 +271,12 @@ class Prometheus:
     def generate_summary(self):
         """Generate a summary of the system's actions."""
 
-        messages = filter_system_messages(self.executionHistory) + System_msg(
+        messages = filter_system_messages(self.executionHistory) + [System_msg(
             msg=f"""You are an AI responsible for generating a summary of the system's actions.
 
 Generate a summary of the system's actions to who informed the system to: {self.goal}.""",
             use_developer=self._llmExecutorClient.use_developer,
-        )
+        )]
 
         return self.llm_interactions._getLLMResponseMessage(
             self._llmExecutorClient.base_invoke(
