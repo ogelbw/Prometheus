@@ -230,24 +230,36 @@ class Prometheus:
             self._makePlan(user_task)
 
         # Inject the external context if the function is provided at init
+        context_msg = None
         if self.external_context is not None:
-            self.executionHistory.append(self.external_context())
+            context_msg = self.external_context()
+            if type(context_msg) is list:
+                pass
+            elif type(context_msg) is dict:
+                context_msg = [context_msg]
+            else:
+                self.log("External context provider must return a list or dictionary of messages.", level=logging_codes.ERROR.value)
+                raise ValueError("External context provider must return a list or dictionary of messages.")
+
+        # contruct prompt
+        prompt = self.executionHistory + [System_msg(
+                    msg=self.currentPlan,
+                    name='Prometheus'
+                )] + context_msg + self.take_step_prompt(
+                    use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
+                )
 
         # Get the LLM to take a step
         stepResponse = self._llmExecutorClient.base_invoke(
-            messages=self.executionHistory +
-                [System_msg(
-                    msg=self.currentPlan,
-                    name='Prometheus'
-                )] +
-                self.take_step_prompt(
-                    use_developer= (self._llmExecutorClient.use_developer) # this only makes sense for o1 o3-mini models
-                ),
+            messages=prompt,
             stream=False,
             use_tools=True,
             tools=self.tools,
             # reasoning_effort="high" if (self._llmExecutorClient.model.__contains__("o1") or self._llmExecutorClient.model.__contains__("o3-mini")) else None
         )
+
+        if context_msg is not None:
+            self.executionHistory += context_msg
 
         self.executionHistory.append(Assistant_msg(
             msg= stepResponse.choices[0].message.content,
@@ -303,4 +315,4 @@ Generate a summary of the system's actions to who informed the system to: {self.
             self._executeStep()
         else:
             self.log("Task complete.", level=logging_codes.TASK_COMPLETE.value)
-            self.log(self.generate_summary().content, level=logging_codes.TASK_COMPLETE.value)
+            self.log("\n" + self.generate_summary().content, level=logging_codes.TASK_COMPLETE.value)
