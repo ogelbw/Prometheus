@@ -60,7 +60,7 @@ You must provide the entire python script in a single code block, you can only h
 """
         )
     ]
-System_msg.__
+
 def _makeToolReviewerStartPromptDefault(use_developer: bool = False):
     """You are an experienced python programmer that is acting as a code reviwer. A developer is about to start make a python tool based on a specification from a user.
 
@@ -101,6 +101,6 @@ def _takeActionStepPromptDefault(
     return [
         System_msg(
             use_developer=use_developer,
-            msg="""Carry out the next step in your plan or make changes to your plan if needed. Call task_complete when you have completed the user's task or if the user's task is impossible."""
+            msg="""Carry out the next step in your plan or make changes to your plan if needed. If you have reached a point where you need another python tool carry out the user's task you can make one with the make_tool tool. Call task_complete when you have completed the user's task or if the user's task is impossible."""
         )
     ]
