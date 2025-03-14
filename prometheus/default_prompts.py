@@ -60,7 +60,7 @@ You must provide the entire python script in a single code block, you can only h
 """
         )
     ]
-System_msg.__
+
 def _makeToolReviewerStartPromptDefault(use_developer: bool = False):
     """You are an experienced python programmer that is acting as a code reviwer. A developer is about to start make a python tool based on a specification from a user.
 
