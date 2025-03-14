@@ -75,16 +75,6 @@ class MakePythonToolToolParameters(BaseModel):
     description: str = Field(..., description="A description of the tool to be made.")
     tool_name: str = Field(..., description="The name of the tool to be made.")
 
-# class UpdatePlanTool(LLMTool):
-#     def __init__(self):
-#         super().__init__(
-#             name="update_plan",
-#             description="Make changes to the current plan the system is following.",
-#             parameters=MakePythonToolToolParameters,
-#             requiredParameters=["wanted_changes"],
-#             type="function"
-#         )
-
 class TaskCompleteToolParameters(BaseModel):
     pass
 
@@ -117,5 +107,18 @@ class MakeToolReviewerApproveTool(LLMTool):
             description="Call this is approve the code made by the developer and send it to the user.",
             parameters=MakeToolReviewerApproveToolParameters,
             requiredParameters=["Tool_name", "description", "parameters"],
+            type="function"
+        )
+
+class updatePlanParameters(BaseModel):
+    new_plan: str = Field(..., description="A step by step plan for how you are going to achieve the user's task. You should mention the tools you are going to call, what you are going to do with the result of that call (if anything) and the reason for doing it. You should also mention what you are going to do if the tool call fails for each step of the plan.")
+
+class updatePlan(LLMTool):
+    def __init__(self):
+        super().__init__(
+            name="update_plan",
+            description="Update the plan that is pinned as the most recent message in the chat.",
+            parameters=updatePlanParameters,
+            requiredParameters=["new_plan"],
             type="function"
         )

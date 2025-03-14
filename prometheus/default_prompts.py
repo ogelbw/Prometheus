@@ -87,13 +87,6 @@ def _makePlanPromptDefault(name:str|None = None, use_developer:bool = False):
         msg="""Make a plan step by step for how you are going to achieve the user's task. You should mention the tools you are going to call, what you are going to do with the result of that call (if anything) and the reason for doing it. You should also mention what you are going to do if the tool call fails for each step of the plan"""
         )]
 
-def _updatePlanPromptDefault(goal:str, name:str|None = None, use_developer:bool = False):
-      return [System_msg(
-        name=name,
-        use_developer=use_developer,
-        msg=f"""Update the step by step plan for how you are going to achieve the user's task which is: "{goal}". You should mention the tools you are going to call, what you are going to do with the result of that call (if anything) and the reason for doing it. You should also mention what you are going to do if the tool call fails for each step of the plan"""
-        )]
-
 
 def _takeActionStepPromptDefault(
     use_developer: bool = False,
@@ -101,6 +94,6 @@ def _takeActionStepPromptDefault(
     return [
         System_msg(
             use_developer=use_developer,
-            msg="""Carry out the next step in your plan or make changes to your plan if needed. Call task_complete when you have completed the user's task or if the user's task is impossible."""
+            msg="""Carry out the next step in your plan or make changes to your plan by calling the update_plan tool if needed. Call task_complete when you have completed the user's task or if the user's task is impossible."""
         )
     ]

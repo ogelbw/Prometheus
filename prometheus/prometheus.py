@@ -138,6 +138,9 @@ class Prometheus:
         self.tools["task_complete"] = TaskCompleteTool()
         self.tools["task_complete"].function = self._taskComplete
 
+        self.tools["update_plan"] = updatePlan()
+        self.tools["update_plan"].function = self._setPlan
+
     def _callTool(self, tool_name: str, tool_args: Dict[str, Any]):
         """Calls a tool with the given name and arguments."""
         try:
@@ -174,21 +177,20 @@ class Prometheus:
         self.tools[tool_name].function = module.Run
         self.log(f"Tool {tool_name} created successfully.")
 
-    def _makePlan(self, goal: str|None = None):
+    def _setPlan(self, plan: str):
+        """Sets the current plan to the given plan."""
+        self.currentPlan = plan
+        return f"Plan has been updated."
+
+    def _makePlan(self, goal: str):
         """Make a step by step plan for the system to follow. If the goal parameter is empty then it just prompts from execution history"""
 
-        if goal is not None:
-            self.executionHistory.append(User_msg(msg=goal, name='Jed'))
-            self.executionHistory += self.make_plan_prompt(
-                name='System',
-                use_developer= self._llmExecutorClient.use_developer
-                )
-        else:
-            # Assuming this is updating the plan as no goal is given
-            self.executionHistory += self.update_plan_prompt(
-                name='System',
-                use_developer= self._llmExecutorClient.use_developer
-                )
+        self.executionHistory.append(User_msg(msg=goal, name='Jed'))
+        self.executionHistory += self.make_plan_prompt(
+            name='System',
+            use_developer= self._llmExecutorClient.use_developer
+            )
+
         
         response = self._llmExecutorClient.base_invoke(
             messages=self.executionHistory,
